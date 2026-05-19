@@ -23,6 +23,7 @@ const (
 
 	sideBySideMinWidth = 100
 	floatingMinWidth   = 42
+	floatingMinHeight  = 4
 )
 
 type Result struct {
@@ -281,8 +282,8 @@ func (m Model) View() string {
 	if side == "" {
 		if m.preview && m.width >= floatingMinWidth {
 			panelWidth := min(84, max(floatingMinWidth, m.width-6))
-			panelHeight := min(18, max(6, m.height-5))
-			list = placeFloatingPanel(list, m.renderSide(panelWidth, panelHeight), m.width)
+			panelHeight := m.floatingPanelHeight()
+			list = m.placeFloatingPanel(list, m.renderSide(panelWidth, panelHeight), m.width)
 		}
 		b.WriteString(list)
 	} else {
@@ -593,14 +594,14 @@ func (m Model) overlay(base string) string {
 	return base + "\n" + panel
 }
 
-func placeFloatingPanel(base, panel string, width int) string {
+func (m Model) placeFloatingPanel(base, panel string, width int) string {
 	baseLines := strings.Split(base, "\n")
 	panelLines := strings.Split(panel, "\n")
 	if len(panelLines) == 0 {
 		return base
 	}
 	left := max(0, (width-lipgloss.Width(panelLines[0]))/2)
-	top := 1
+	top := floatingPanelTop(len(baseLines), len(panelLines), m.selectedRowInViewport())
 	for i, panelLine := range panelLines {
 		row := top + i
 		line := strings.Repeat(" ", left) + panelLine
@@ -611,6 +612,50 @@ func placeFloatingPanel(base, panel string, width int) string {
 		baseLines[row] = line
 	}
 	return strings.Join(baseLines, "\n")
+}
+
+func (m Model) selectedRowInViewport() int {
+	rowHeight := 1
+	if m.comfy {
+		rowHeight = 2
+	}
+	return max(0, (m.cursor-m.offset)*rowHeight)
+}
+
+func (m Model) floatingPanelHeight() int {
+	baseHeight := m.listHeight()
+	desired := min(18, max(floatingMinHeight, m.height-5))
+	if baseHeight <= desired {
+		return min(desired, baseHeight)
+	}
+	selectedRow := m.selectedRowInViewport()
+	aboveSpace := selectedRow
+	belowSpace := baseHeight - selectedRow - 1
+	if belowSpace >= floatingMinHeight {
+		return min(desired, belowSpace)
+	}
+	if aboveSpace >= floatingMinHeight {
+		return min(desired, aboveSpace)
+	}
+	return min(desired, baseHeight)
+}
+
+func floatingPanelTop(baseHeight, panelHeight, avoidRow int) int {
+	if baseHeight <= panelHeight {
+		return 0
+	}
+	aboveSpace := avoidRow
+	belowSpace := baseHeight - avoidRow - 1
+	switch {
+	case belowSpace >= panelHeight:
+		return avoidRow + 1
+	case aboveSpace >= panelHeight:
+		return avoidRow - panelHeight
+	case belowSpace >= aboveSpace:
+		return max(0, baseHeight-panelHeight)
+	default:
+		return 0
+	}
 }
 
 func fitPanelLines(lines []string, height int) []string {

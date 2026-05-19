@@ -82,3 +82,44 @@ func TestNarrowPreviewRendersFloatingPanel(t *testing.T) {
 		t.Fatalf("expected narrow preview popup content, got %q", view)
 	}
 }
+
+func TestFloatingPreviewDoesNotCoverSelectedRow(t *testing.T) {
+	items := []sessions.Session{
+		{ID: "one", Title: "one"},
+		{ID: "two", Title: "two"},
+		{ID: "three", Title: "three"},
+		{ID: "four", Title: "four"},
+		{ID: "five", Title: "five"},
+	}
+	model := New(items)
+	model.width = 80
+	model.height = 12
+	model.cursor = 2
+	model.clamp()
+
+	view := model.View()
+
+	if !strings.Contains(view, "▌ three") {
+		t.Fatalf("expected selected row to remain visible, got %q", view)
+	}
+}
+
+func TestFloatingPanelTopAvoidsSelectedRow(t *testing.T) {
+	tests := []struct {
+		name        string
+		baseHeight  int
+		panelHeight int
+		avoidRow    int
+		want        int
+	}{
+		{name: "below selected", baseHeight: 10, panelHeight: 3, avoidRow: 2, want: 3},
+		{name: "above selected", baseHeight: 10, panelHeight: 3, avoidRow: 8, want: 5},
+		{name: "fallback bottom", baseHeight: 8, panelHeight: 6, avoidRow: 3, want: 2},
+	}
+
+	for _, tt := range tests {
+		if got := floatingPanelTop(tt.baseHeight, tt.panelHeight, tt.avoidRow); got != tt.want {
+			t.Fatalf("%s: got %d, want %d", tt.name, got, tt.want)
+		}
+	}
+}
