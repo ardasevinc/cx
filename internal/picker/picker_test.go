@@ -123,3 +123,17 @@ func TestFloatingPanelTopAvoidsSelectedRow(t *testing.T) {
 		}
 	}
 }
+
+func TestDetailShortcutOpensHiddenPreview(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+	model.preview = false
+
+	updated, _ := model.updateKeys(tea.KeyMsg{Type: tea.KeyCtrlE})
+	next := updated.(Model)
+
+	if !next.preview || !next.detail {
+		t.Fatalf("expected ctrl+e to open detail popup, preview=%v detail=%v", next.preview, next.detail)
+	}
+}

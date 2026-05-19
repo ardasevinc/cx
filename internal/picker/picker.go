@@ -102,6 +102,7 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.result = m.selection(ActionFork)
 		return m, tea.Quit
 	case tea.KeyCtrlE:
+		m.preview = true
 		m.detail = !m.detail
 	case tea.KeyCtrlV:
 		m.comfy = !m.comfy
@@ -223,6 +224,7 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 	case "p", "preview":
 		m.preview = !m.preview
 	case "e", "detail", "explain":
+		m.preview = true
 		m.detail = !m.detail
 	case "v", "view":
 		if len(fields) > 1 {
