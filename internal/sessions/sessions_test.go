@@ -208,6 +208,79 @@ values ('named-thread', '/tmp/named-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/
 	}
 }
 
+func TestLoadInheritsParentThreadNameForFork(t *testing.T) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not available")
+	}
+
+	root := t.TempDir()
+	codexHome := filepath.Join(root, ".codex")
+	sessionDir := filepath.Join(codexHome, "sessions", "2026", "05", "19")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	forkPath := filepath.Join(sessionDir, "rollout-fork.jsonl")
+	writeRollout(t, forkPath, `{"type":"session_meta","payload":{"id":"fork-thread","forked_from_id":"parent-thread","timestamp":"2026-05-19T19:25:46Z","cwd":"/tmp/cx","source":"cli","thread_source":"user"}}
+`)
+
+	dbPath := filepath.Join(codexHome, "state_5.sqlite")
+	sql := `
+create table threads (
+  id text primary key,
+  rollout_path text not null,
+  created_at integer not null,
+  updated_at integer not null,
+  source text not null,
+  model_provider text not null,
+  cwd text not null,
+  title text not null,
+  sandbox_policy text not null,
+  approval_mode text not null,
+  tokens_used integer not null default 0,
+  has_user_event integer not null default 0,
+  archived integer not null default 0,
+  archived_at integer,
+  git_sha text,
+  git_branch text,
+  git_origin_url text,
+  cli_version text not null default '',
+  first_user_message text not null default '',
+  agent_nickname text,
+  agent_role text,
+  memory_mode text not null default 'enabled',
+  model text,
+  reasoning_effort text,
+  agent_path text,
+  created_at_ms integer,
+  updated_at_ms integer,
+  thread_source text,
+  preview text not null default ''
+);
+insert into threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, archived, created_at_ms, updated_at_ms, first_user_message, thread_source, preview)
+values ('fork-thread', '` + forkPath + `', 1, 2, 'cli', 'openai', '/tmp/cx', 'uh.. codex... we have an issue', '{}', 'never', 0, 1000, 2000, 'uh.. codex... we have an issue', 'user', 'uh.. codex... we have an issue');
+`
+	cmd := exec.Command("sqlite3", dbPath, sql)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("sqlite3 setup failed: %v\n%s", err, output)
+	}
+	writeRollout(t, filepath.Join(codexHome, "session_index.jsonl"), `{"id":"parent-thread","thread_name":"GCP inpersona-staging pwned","updated_at":"2026-05-12T19:59:18Z"}
+`)
+
+	sessions, err := Load(Options{CodexHome: codexHome})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].Title != "GCP inpersona-staging pwned" {
+		t.Fatalf("expected inherited parent title, got %q", sessions[0].Title)
+	}
+	if sessions[0].ParentID != "parent-thread" {
+		t.Fatalf("expected parent id, got %q", sessions[0].ParentID)
+	}
+}
+
 func writeRollout(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

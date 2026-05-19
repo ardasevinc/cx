@@ -31,6 +31,7 @@ type Session struct {
 	Project    string
 	Source     string
 	Path       string
+	ParentID   string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	Turns      int
@@ -179,6 +180,8 @@ order by updated_at_ms desc, id desc;
 		}
 		sessions = append(sessions, session)
 	}
+	loadForkParents(sessions)
+	applyThreadNames(sessions, threadNames)
 	return sessions, nil
 }
 
@@ -247,13 +250,54 @@ func loadThreadNames(codexHome string) map[string]string {
 
 func applyThreadNames(sessions []Session, threadNames map[string]string) {
 	for i := range sessions {
-		name := threadNames[sessions[i].ID]
+		name := firstNonEmpty(threadNames[sessions[i].ID], threadNames[sessions[i].ParentID])
 		if strings.TrimSpace(name) == "" || strings.TrimSpace(name) == strings.TrimSpace(sessions[i].Preview) {
 			continue
 		}
 		sessions[i].Title = oneLine(name, 96)
 		sessions[i].SearchText = buildSearchText(sessions[i])
 	}
+}
+
+func loadForkParents(sessions []Session) {
+	for i := range sessions {
+		if sessions[i].ParentID != "" || sessions[i].Path == "" {
+			continue
+		}
+		parentID := readForkParent(sessions[i].Path)
+		if parentID == "" {
+			continue
+		}
+		sessions[i].ParentID = parentID
+		sessions[i].SearchText = buildSearchText(sessions[i])
+	}
+}
+
+func readForkParent(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	var parentID string
+	_ = scanPrefix(file, defaultIndexBytes, func(line []byte) {
+		if parentID != "" {
+			return
+		}
+		var item rolloutItem
+		if err := json.Unmarshal(bytes.TrimSpace(line), &item); err != nil || item.Type != "session_meta" {
+			return
+		}
+		var meta sessionMeta
+		if err := json.Unmarshal(item.Payload, &meta); err != nil {
+			return
+		}
+		parentID = strings.TrimSpace(meta.ForkedFromID)
+	})
+	return parentID
 }
 
 func distinctThreadTitle(title, firstUserMessage string) string {
@@ -312,6 +356,7 @@ type sessionMeta struct {
 	CWD          string          `json:"cwd"`
 	Source       json.RawMessage `json:"source"`
 	ThreadSource string          `json:"thread_source"`
+	ForkedFromID string          `json:"forked_from_id"`
 }
 
 type turnContext struct {
@@ -432,6 +477,7 @@ func applySessionMeta(session *Session, payload json.RawMessage) {
 	session.ID = meta.ID
 	session.CWD = meta.CWD
 	session.Source = sourceLabel(meta)
+	session.ParentID = meta.ForkedFromID
 	if created, ok := parseTime(meta.Timestamp); ok {
 		session.CreatedAt = created
 	}
@@ -637,6 +683,7 @@ func buildSearchText(session Session) string {
 		session.Project,
 		session.Source,
 		session.Path,
+		session.ParentID,
 	}
 	for _, field := range fields {
 		b.WriteString(field)
