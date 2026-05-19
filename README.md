@@ -13,8 +13,28 @@ codex fork <session-id>
 
 ## Status
 
-Seed scaffold. The first implementation target is a read-only local session
-index over `~/.codex/sessions`, followed by an interactive picker.
+Early local build. `cx` reads Codex's state database when available, falls back
+to local session JSONLs, and opens a searchable picker that can resume or fork
+the selected thread.
+
+## Use
+
+```sh
+cx
+cx --list --limit 20
+cx --no-alt-screen
+```
+
+Keyboard:
+
+- type to search
+- `j`/`k` or arrows to move
+- `enter` to run `codex resume <session-id>`
+- `ctrl+f` to run `codex fork <session-id>`
+- `tab` toggles preview
+- `ctrl+e` toggles detail view
+- `ctrl+v` toggles compact/comfy rows
+- `esc`/`ctrl+c` exits
 
 ## Development
 
@@ -24,4 +44,3 @@ just test
 just lint
 just build
 ```
-
