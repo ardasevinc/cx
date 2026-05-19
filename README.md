@@ -7,8 +7,8 @@ updated, supports immediate search and preview/detail views, then delegates
 continuation back to Codex:
 
 ```sh
-codex resume <session-id>
-codex fork <session-id>
+codex --yolo -C <session-cwd> resume <session-id>
+codex --yolo -C <session-cwd> fork <session-id>
 ```
 
 ## Install
@@ -41,12 +41,27 @@ updates.
 cx
 cx --list --limit 20
 cx list --limit 20
+cx new
+cx new "debug oauth staging"
+cx new --cwd ~/programming/open-source/cx
 cx version
 cx -V
 cx --no-alt-screen
 ```
 
 `cx --help` prints the full CLI, flag, key, and command reference.
+
+`cx new [name]` creates a fresh local chat directory under
+`~/Documents/Codex/YYYY-MM-DD/` using the local date, then launches:
+
+```sh
+codex --yolo -C <created-dir>
+```
+
+If no name is provided, it creates the next `chat-001`, `chat-002`, ...
+directory. Named chats are slugged and collision-free, so an existing folder is
+never overwritten. `cx new --cwd DIR` starts a fresh Codex thread in an existing
+project directory with the same `--yolo -C` launch contract.
 
 Keyboard:
 

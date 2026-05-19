@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ardasevinc/cx/internal/launcher"
 	"github.com/ardasevinc/cx/internal/picker"
 	"github.com/ardasevinc/cx/internal/sessions"
 )
@@ -21,6 +22,13 @@ func main() {
 }
 
 func run(args []string, stdout io.Writer, stderr io.Writer) {
+	if len(args) > 0 && args[0] == "new" {
+		if err := runNew(args[1:], stdout, stderr); err != nil {
+			die(err)
+		}
+		return
+	}
+
 	flags := flag.NewFlagSet("cx", flag.ExitOnError)
 	flags.SetOutput(stderr)
 	showVersion := flags.Bool("version", false, "print version and exit")
@@ -96,6 +104,8 @@ func printUsage(out io.Writer) {
 Usage:
   cx [flags]
   cx list [--limit N]
+  cx new [name]
+  cx new --cwd DIR
   cx version | cx --version | cx -V
 
 Flags:
@@ -111,8 +121,8 @@ TUI keys:
   arrows, ^j/^k       Move selection.
   mouse wheel         Move selection.
   pgup/pgdn home/end  Jump around the list.
-  enter               Run codex resume <session-id>.
-  ^f                  Run codex fork <session-id>.
+  enter               Run codex --yolo -C <cwd> resume <session-id>.
+  ^f                  Run codex --yolo -C <cwd> fork <session-id>.
   y                   Copy selected session id.
   :                   Command mode.
   ?                   Help overlay.
@@ -132,6 +142,63 @@ Commands:
   :quit`)
 }
 
+func runNew(args []string, stdout io.Writer, stderr io.Writer) error {
+	flags := flag.NewFlagSet("cx new", flag.ExitOnError)
+	flags.SetOutput(stderr)
+	cwd := flags.String("cwd", "", "start a fresh Codex thread in an existing project directory")
+	printOnly := flags.Bool("print-dir", false, "print the launch directory without starting Codex")
+	flags.Usage = func() {
+		_, _ = fmt.Fprintln(stderr, `cx new - start a fresh Codex thread
+
+Usage:
+  cx new [name]
+  cx new --cwd DIR
+
+Behavior:
+  cx new [name] creates a fresh dated chat directory under
+  ~/Documents/Codex/YYYY-MM-DD/ and runs:
+
+    codex --yolo -C <created-dir>
+
+  cx new --cwd DIR starts Codex in an existing project directory with:
+
+    codex --yolo -C <dir>
+
+Flags:
+  --cwd DIR      Existing project directory to start from.
+  --print-dir   Print the resolved directory and do not launch Codex.
+  --help        Show this help.`)
+	}
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	var dir string
+	if *cwd != "" {
+		if flags.NArg() > 0 {
+			return fmt.Errorf("cx new --cwd does not accept a chat name")
+		}
+		resolved, err := launcher.ProjectDir(*cwd)
+		if err != nil {
+			return err
+		}
+		dir = resolved
+	} else {
+		name := strings.Join(flags.Args(), " ")
+		plan, err := launcher.PlanChat(name, launcher.Options{})
+		if err != nil {
+			return err
+		}
+		dir = plan.Dir
+	}
+
+	if *printOnly {
+		_, _ = fmt.Fprintln(stdout, dir)
+		return nil
+	}
+	return runCodexFresh(dir)
+}
+
 func printList(out io.Writer, items []sessions.Session, limit int) {
 	if limit <= 0 || limit > len(items) {
 		limit = len(items)
@@ -142,7 +209,19 @@ func printList(out io.Writer, items []sessions.Session, limit int) {
 }
 
 func runCodex(result picker.Result) error {
-	args := []string{string(result.Action), result.Session.ID}
+	args := []string{"--yolo"}
+	if result.Session.CWD != "" {
+		args = append(args, "-C", result.Session.CWD)
+	}
+	args = append(args, string(result.Action), result.Session.ID)
+	return runCodexArgs(args)
+}
+
+func runCodexFresh(dir string) error {
+	return runCodexArgs([]string{"--yolo", "-C", dir})
+}
+
+func runCodexArgs(args []string) error {
 	cmd := exec.Command("codex", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
