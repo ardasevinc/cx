@@ -30,9 +30,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) {
 	limit := flags.Int("limit", 20, "maximum sessions to print with --list")
 	noAltScreen := flags.Bool("no-alt-screen", false, "run the picker without alternate screen mode")
 	flags.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "usage: cx [--list] [--limit N] [--codex-home DIR] [--no-alt-screen]")
-		_, _ = fmt.Fprintln(stderr, "       cx list [--limit N]")
-		_, _ = fmt.Fprintln(stderr, "       cx version | cx --version | cx -V")
+		printUsage(stderr)
 	}
 	args = normalizeCommandArgs(args)
 	if err := flags.Parse(args); err != nil {
@@ -90,6 +88,48 @@ func normalizeCommandArgs(args []string) []string {
 	default:
 		return args
 	}
+}
+
+func printUsage(out io.Writer) {
+	_, _ = fmt.Fprintln(out, `cx - Codex session picker
+
+Usage:
+  cx [flags]
+  cx list [--limit N]
+  cx version | cx --version | cx -V
+
+Flags:
+  --codex-home DIR    Read Codex state from DIR instead of ~/.codex.
+  --list              Print sessions and exit.
+  --limit N           Maximum sessions for --list. Default: 20.
+  --no-alt-screen     Render in the current terminal buffer.
+  --version, -V       Print version and exit.
+  --help              Show this help.
+
+TUI keys:
+  type                Search immediately. Printable j/k search too.
+  arrows, ^j/^k       Move selection.
+  mouse wheel         Move selection.
+  pgup/pgdn home/end  Jump around the list.
+  enter               Run codex resume <session-id>.
+  ^f                  Run codex fork <session-id>.
+  y                   Copy selected session id.
+  :                   Command mode.
+  ?                   Help overlay.
+  tab                 Toggle preview panel.
+  ^e                  Toggle detail view.
+  ^v                  Toggle compact/comfy rows.
+  esc, ^c             Exit.
+
+Commands:
+  :resume
+  :fork
+  :copy id|path|cwd|title|resume|fork
+  :view compact|comfy
+  :preview
+  :detail
+  :clear
+  :quit`)
 }
 
 func printList(out io.Writer, items []sessions.Session, limit int) {

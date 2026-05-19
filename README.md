@@ -1,21 +1,28 @@
 # cx
 
-`cx` is a custom Codex session picker for Arda's CLI workflow.
+`cx` is a fast local Codex session picker for the terminal.
 
-The intended shape is a fast, searchable TUI that indexes previous Codex threads,
-groups them by project and general chat context, previews transcripts, and then
-delegates actual continuation to Codex:
+It reads Codex's local session state, shows all previous threads sorted by last
+updated, supports immediate search and preview/detail views, then delegates
+continuation back to Codex:
 
 ```sh
 codex resume <session-id>
 codex fork <session-id>
 ```
 
-## Status
+## Install
 
-Early local build. `cx` reads Codex's state database when available, falls back
-to local session JSONLs, and opens a searchable picker that can resume or fork
-the selected thread.
+```sh
+go install github.com/ardasevinc/cx/cmd/cx@latest
+```
+
+Requirements:
+
+- Codex CLI available as `codex`.
+- Local Codex state under `~/.codex`.
+- `sqlite3` on `PATH` for the fast state-db path. `cx` falls back to JSONL scans
+  if unavailable.
 
 ## Use
 
@@ -27,6 +34,8 @@ cx version
 cx -V
 cx --no-alt-screen
 ```
+
+`cx --help` prints the full CLI, flag, key, and command reference.
 
 Keyboard:
 
@@ -67,3 +76,7 @@ just test
 just lint
 just build
 ```
+
+## License
+
+MIT

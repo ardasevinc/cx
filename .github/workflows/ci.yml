@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install tools
+        run: |
+          go install mvdan.cc/gofumpt@latest
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Gate
+        run: |
+          gofumpt -w .
+          test -z "$(git status --porcelain)"
+          go test ./...
+          go vet ./...
+          golangci-lint run ./...
+          govulncheck ./...
+          go build -o bin/cx ./cmd/cx

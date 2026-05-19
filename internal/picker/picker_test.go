@@ -43,7 +43,7 @@ func TestMouseWheelMovesSelection(t *testing.T) {
 	updated, _ := model.updateMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
 	next := updated.(Model)
 
-	if next.cursor != 3 {
-		t.Fatalf("expected wheel down to move three rows, got cursor %d", next.cursor)
+	if next.cursor != 1 {
+		t.Fatalf("expected wheel down to move one row, got cursor %d", next.cursor)
 	}
 }

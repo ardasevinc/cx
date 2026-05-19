@@ -151,9 +151,9 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
-		m.move(-3)
+		m.move(-1)
 	case tea.MouseButtonWheelDown:
-		m.move(3)
+		m.move(1)
 	}
 	return m, nil
 }
@@ -508,7 +508,7 @@ func compactMeta(session sessions.Session) string {
 	if project == "" {
 		project = "unknown"
 	}
-	project = truncate(project, 12)
+	project = truncate(project, 22)
 	return project + " · " + shortTime(session.UpdatedAt)
 }
 
@@ -529,7 +529,7 @@ func lineWithMeta(prefix, title, meta string, width int) string {
 		return truncate(prefix+title, width)
 	}
 
-	metaWidth := min(28, lipgloss.Width(meta))
+	metaWidth := min(40, lipgloss.Width(meta))
 	meta = truncate(meta, metaWidth)
 	gapWidth := 2
 	titleWidth := available - metaWidth - gapWidth

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -135,6 +136,75 @@ values ('db-thread', '/tmp/db-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/cx', '
 	}
 	if sessions[0].ID != "db-thread" || sessions[0].Title != "DB title" || sessions[0].TokensUsed != 42 {
 		t.Fatalf("unexpected db session: %#v", sessions[0])
+	}
+}
+
+func TestLoadUsesSessionIndexThreadNameWhenDBTitleIsFirstMessage(t *testing.T) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not available")
+	}
+
+	root := t.TempDir()
+	codexHome := filepath.Join(root, ".codex")
+	if err := os.MkdirAll(codexHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(codexHome, "state_5.sqlite")
+	sql := `
+create table threads (
+  id text primary key,
+  rollout_path text not null,
+  created_at integer not null,
+  updated_at integer not null,
+  source text not null,
+  model_provider text not null,
+  cwd text not null,
+  title text not null,
+  sandbox_policy text not null,
+  approval_mode text not null,
+  tokens_used integer not null default 0,
+  has_user_event integer not null default 0,
+  archived integer not null default 0,
+  archived_at integer,
+  git_sha text,
+  git_branch text,
+  git_origin_url text,
+  cli_version text not null default '',
+  first_user_message text not null default '',
+  agent_nickname text,
+  agent_role text,
+  memory_mode text not null default 'enabled',
+  model text,
+  reasoning_effort text,
+  agent_path text,
+  created_at_ms integer,
+  updated_at_ms integer,
+  thread_source text,
+  preview text not null default ''
+);
+insert into threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, tokens_used, archived, created_at_ms, updated_at_ms, first_user_message, thread_source, preview)
+values ('named-thread', '/tmp/named-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/cx', 'uh.. codex... we have an issue', '{}', 'never', 42, 0, 1000, 2000, 'uh.. codex... we have an issue', 'user', 'uh.. codex... we have an issue');
+`
+	cmd := exec.Command("sqlite3", dbPath, sql)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("sqlite3 setup failed: %v\n%s", err, output)
+	}
+	writeRollout(t, filepath.Join(codexHome, "session_index.jsonl"), `{"id":"named-thread","thread_name":"Investigate issue","updated_at":"2026-05-12T19:18:49Z"}
+{"id":"named-thread","thread_name":"GCP inpersona-staging pwned","updated_at":"2026-05-12T19:59:18Z"}
+`)
+
+	sessions, err := Load(Options{CodexHome: codexHome})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].Title != "GCP inpersona-staging pwned" {
+		t.Fatalf("expected session-index title, got %q", sessions[0].Title)
+	}
+	if !strings.Contains(sessions[0].SearchText, "gcp inpersona-staging pwned") {
+		t.Fatalf("expected custom title to be searchable: %q", sessions[0].SearchText)
 	}
 }
 

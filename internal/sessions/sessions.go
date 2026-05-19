@@ -106,6 +106,7 @@ func loadJSONL(codexHome string, opts Options) ([]Session, error) {
 		}
 		return out[i].UpdatedAt.After(out[j].UpdatedAt)
 	})
+	applyThreadNames(out, loadThreadNames(codexHome))
 	return out, nil
 }
 
@@ -123,6 +124,11 @@ type dbThread struct {
 	TokensUsed       int64  `json:"tokens_used"`
 	AgentNickname    string `json:"agent_nickname"`
 	AgentRole        string `json:"agent_role"`
+}
+
+type sessionIndexEntry struct {
+	ID         string `json:"id"`
+	ThreadName string `json:"thread_name"`
 }
 
 func loadStateDB(codexHome string) ([]Session, error) {
@@ -164,9 +170,10 @@ order by updated_at_ms desc, id desc;
 		return nil, err
 	}
 
+	threadNames := loadThreadNames(codexHome)
 	sessions := make([]Session, 0, len(rows))
 	for _, row := range rows {
-		session := sessionFromDB(row)
+		session := sessionFromDB(row, threadNames[row.ID])
 		if session.ID == "" {
 			continue
 		}
@@ -175,8 +182,8 @@ order by updated_at_ms desc, id desc;
 	return sessions, nil
 }
 
-func sessionFromDB(row dbThread) Session {
-	title := firstNonEmpty(row.Title, row.FirstUserMessage, row.Preview)
+func sessionFromDB(row dbThread, threadName string) Session {
+	title := firstNonEmpty(distinctThreadTitle(row.Title, row.FirstUserMessage), threadName, row.Title, row.FirstUserMessage, row.Preview)
 	session := Session{
 		ID:         row.ID,
 		Title:      oneLine(title, 96),
@@ -206,6 +213,55 @@ func sessionFromDB(row dbThread) Session {
 	}
 	session.SearchText = buildSearchText(session)
 	return session
+}
+
+func loadThreadNames(codexHome string) map[string]string {
+	path := filepath.Join(codexHome, "session_index.jsonl")
+	file, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	names := make(map[string]string)
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), maxIndexLineBytes)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var entry sessionIndexEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		name := strings.TrimSpace(entry.ThreadName)
+		if entry.ID != "" && name != "" {
+			names[entry.ID] = name
+		}
+	}
+	return names
+}
+
+func applyThreadNames(sessions []Session, threadNames map[string]string) {
+	for i := range sessions {
+		name := threadNames[sessions[i].ID]
+		if strings.TrimSpace(name) == "" || strings.TrimSpace(name) == strings.TrimSpace(sessions[i].Preview) {
+			continue
+		}
+		sessions[i].Title = oneLine(name, 96)
+		sessions[i].SearchText = buildSearchText(sessions[i])
+	}
+}
+
+func distinctThreadTitle(title, firstUserMessage string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || strings.TrimSpace(firstUserMessage) == title {
+		return ""
+	}
+	return title
 }
 
 func unixMilli(value int64) time.Time {
