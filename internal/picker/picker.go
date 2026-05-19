@@ -436,9 +436,6 @@ func (m Model) renderRow(session sessions.Session, width int, selected bool) []s
 	if title == "" {
 		title = session.ID
 	}
-	if session.ParentID != "" {
-		title = "↳ " + title
-	}
 	meta := compactMeta(session)
 	first := lineWithMeta(prefix, title, meta, width)
 
@@ -515,6 +512,9 @@ func compactMeta(session sessions.Session) string {
 		project = "unknown"
 	}
 	project = truncate(project, 22)
+	if session.ParentID != "" {
+		project += " ⎇"
+	}
 	return project + " · " + shortTime(session.UpdatedAt)
 }
 

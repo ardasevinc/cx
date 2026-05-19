@@ -56,7 +56,7 @@ func TestForkedSessionRowShowsMarker(t *testing.T) {
 	if len(row) != 1 {
 		t.Fatalf("expected compact row, got %#v", row)
 	}
-	if !strings.Contains(row[0], "↳ GCP inpersona-staging pwned") {
+	if !strings.Contains(row[0], "GCP inpersona-staging pwned") || !strings.Contains(row[0], "unknown ⎇") {
 		t.Fatalf("expected fork marker in row, got %q", row[0])
 	}
 }
