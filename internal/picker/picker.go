@@ -32,21 +32,22 @@ type Result struct {
 }
 
 type Model struct {
-	all      []sessions.Session
-	filtered []sessions.Session
-	query    string
-	cursor   int
-	offset   int
-	width    int
-	height   int
-	preview  bool
-	detail   bool
-	comfy    bool
-	help     bool
-	command  bool
-	cmdText  string
-	notice   string
-	result   Result
+	all                 []sessions.Session
+	filtered            []sessions.Session
+	query               string
+	cursor              int
+	offset              int
+	width               int
+	height              int
+	preview             bool
+	detail              bool
+	previewBeforeDetail bool
+	comfy               bool
+	help                bool
+	command             bool
+	cmdText             string
+	notice              string
+	result              Result
 }
 
 type copyMsg struct {
@@ -102,13 +103,15 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.result = m.selection(ActionFork)
 		return m, tea.Quit
 	case tea.KeyCtrlE:
-		m.preview = true
-		m.detail = !m.detail
+		m.toggleDetail()
 	case tea.KeyCtrlV:
 		m.comfy = !m.comfy
 		m.clamp()
 	case tea.KeyTab:
 		m.preview = !m.preview
+		if !m.preview {
+			m.detail = false
+		}
 	case tea.KeyCtrlL:
 		m.notice = ""
 	case tea.KeyUp, tea.KeyCtrlK:
@@ -223,9 +226,11 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 		m.help = true
 	case "p", "preview":
 		m.preview = !m.preview
+		if !m.preview {
+			m.detail = false
+		}
 	case "e", "detail", "explain":
-		m.preview = true
-		m.detail = !m.detail
+		m.toggleDetail()
 	case "v", "view":
 		if len(fields) > 1 {
 			m.setView(fields[1])
@@ -244,6 +249,17 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 	}
 	m.clamp()
 	return m, nil
+}
+
+func (m *Model) toggleDetail() {
+	if m.detail {
+		m.detail = false
+		m.preview = m.previewBeforeDetail
+		return
+	}
+	m.previewBeforeDetail = m.preview
+	m.preview = true
+	m.detail = true
 }
 
 func (m *Model) setView(view string) {

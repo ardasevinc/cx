@@ -137,3 +137,33 @@ func TestDetailShortcutOpensHiddenPreview(t *testing.T) {
 		t.Fatalf("expected ctrl+e to open detail popup, preview=%v detail=%v", next.preview, next.detail)
 	}
 }
+
+func TestDetailShortcutRestoresHiddenPreview(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+	model.preview = false
+
+	updated, _ := model.updateKeys(tea.KeyMsg{Type: tea.KeyCtrlE})
+	updated, _ = updated.(Model).updateKeys(tea.KeyMsg{Type: tea.KeyCtrlE})
+	next := updated.(Model)
+
+	if next.preview || next.detail {
+		t.Fatalf("expected ctrl+e to restore hidden preview, preview=%v detail=%v", next.preview, next.detail)
+	}
+}
+
+func TestPreviewToggleClosesDetail(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+	model.detail = true
+	model.preview = true
+
+	updated, _ := model.updateKeys(tea.KeyMsg{Type: tea.KeyTab})
+	next := updated.(Model)
+
+	if next.preview || next.detail {
+		t.Fatalf("expected tab to close preview and detail, preview=%v detail=%v", next.preview, next.detail)
+	}
+}
