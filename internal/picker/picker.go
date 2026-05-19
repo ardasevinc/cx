@@ -513,7 +513,7 @@ func compactMeta(session sessions.Session) string {
 	}
 	project = truncate(project, 22)
 	if session.ParentID != "" {
-		project += " ⎇"
+		project = "⎇ " + project
 	}
 	return project + " · " + shortTime(session.UpdatedAt)
 }
