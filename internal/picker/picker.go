@@ -3,7 +3,6 @@ package picker
 import (
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -76,6 +75,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateHelp(msg)
 		}
 		return m.updateKeys(msg)
+	case tea.MouseMsg:
+		return m.updateMouse(msg)
 	case copyMsg:
 		if msg.err != nil {
 			m.notice = "copy failed: " + msg.err.Error()
@@ -105,9 +106,9 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.preview = !m.preview
 	case tea.KeyCtrlL:
 		m.notice = ""
-	case tea.KeyUp:
+	case tea.KeyUp, tea.KeyCtrlK:
 		m.move(-1)
-	case tea.KeyDown:
+	case tea.KeyDown, tea.KeyCtrlJ:
 		m.move(1)
 	case tea.KeyPgUp:
 		m.move(-m.listHeight())
@@ -140,19 +141,19 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "y":
 			return m, m.copySelection("id")
-		case "j":
-			if m.query == "" {
-				m.move(1)
-				return m, nil
-			}
-		case "k":
-			if m.query == "" {
-				m.move(-1)
-				return m, nil
-			}
 		}
 		m.query += key
 		m.refreshFilter()
+	}
+	return m, nil
+}
+
+func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		m.move(-3)
+	case tea.MouseButtonWheelDown:
+		m.move(3)
 	}
 	return m, nil
 }
@@ -392,26 +393,19 @@ func (m Model) header() string {
 		query = "type to search"
 	}
 	count := fmt.Sprintf("%d/%d", len(m.filtered), len(m.all))
-	return headerStyle.Width(m.width).Render("cx  " + mutedStyle.Render(query) + "  " + count)
+	text := "cx  " + query + "  " + count
+	return headerStyle.Render(truncate(text, paddedWidth(m.width)))
 }
 
 func (m Model) footer() string {
 	if m.command {
-		return commandStyle.Width(m.width).Render(":" + m.cmdText)
+		return commandStyle.Render(truncate(":"+m.cmdText, paddedWidth(m.width)))
 	}
-	mode := "compact"
-	if m.comfy {
-		mode = "comfy"
-	}
-	preview := "preview:on"
-	if !m.preview {
-		preview = "preview:off"
-	}
-	text := "enter resume  ctrl+f fork  y copy  : cmd  ? help  tab preview  ctrl+e detail  ctrl+v " + mode + "  " + preview
+	text := "enter resume  ^f fork  y copy  : cmd  ? help  ^j/^k move  tab preview  ^e detail  ^v view"
 	if m.notice != "" {
 		text = m.notice + "  " + text
 	}
-	return footerStyle.Width(m.width).Render(truncate(text, m.width))
+	return footerStyle.Render(truncate(text, paddedWidth(m.width)))
 }
 
 func (m Model) renderList(width int) string {
@@ -442,21 +436,18 @@ func (m Model) renderRow(session sessions.Session, width int, selected bool) []s
 	if title == "" {
 		title = session.ID
 	}
-	meta := fmt.Sprintf("%s  %s  %s", projectStyle.Render(session.Project), shortTime(session.UpdatedAt), filepath.Base(session.CWD))
-	first := prefix + title
-	if width > 40 {
-		padding := width - lipgloss.Width(prefix) - lipgloss.Width(title) - lipgloss.Width(meta) - 1
-		if padding > 0 {
-			first = prefix + title + strings.Repeat(" ", padding) + meta
-		}
-	}
-	first = truncate(first, width)
+	meta := compactMeta(session)
+	first := lineWithMeta(prefix, title, meta, width)
 
 	if !m.comfy {
 		return []string{style.Width(width).Render(first)}
 	}
 
-	second := "  " + previewStyle.Render(truncate(session.Preview, max(10, width-2)))
+	context := session.Preview
+	if context == "" {
+		context = session.CWD
+	}
+	second := "  " + previewStyle.Render(truncate(context, max(10, width-2)))
 	return []string{
 		style.Width(width).Render(first),
 		style.Width(width).Render(second),
@@ -512,6 +503,48 @@ func (m Model) renderDetail(session sessions.Session, width int) string {
 	return sideBoxStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
+func compactMeta(session sessions.Session) string {
+	project := session.Project
+	if project == "" {
+		project = "unknown"
+	}
+	project = truncate(project, 12)
+	return project + " · " + shortTime(session.UpdatedAt)
+}
+
+func paddedWidth(width int) int {
+	return max(1, width-2)
+}
+
+func lineWithMeta(prefix, title, meta string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	prefixWidth := lipgloss.Width(prefix)
+	available := width - prefixWidth
+	if available <= 0 {
+		return truncate(prefix, width)
+	}
+	if width < 48 || meta == "" {
+		return truncate(prefix+title, width)
+	}
+
+	metaWidth := min(28, lipgloss.Width(meta))
+	meta = truncate(meta, metaWidth)
+	gapWidth := 2
+	titleWidth := available - metaWidth - gapWidth
+	if titleWidth < 12 {
+		return truncate(prefix+title, width)
+	}
+
+	title = truncate(title, titleWidth)
+	padding := width - prefixWidth - lipgloss.Width(title) - metaWidth
+	if padding < gapWidth {
+		padding = gapWidth
+	}
+	return prefix + title + strings.Repeat(" ", padding) + projectStyle.Render(meta)
+}
+
 func (m Model) overlay(base string) string {
 	if !m.help {
 		return base
@@ -520,7 +553,8 @@ func (m Model) overlay(base string) string {
 		helpTitleStyle.Render("cx help"),
 		"",
 		"navigation",
-		"  j/k, arrows, pgup/pgdn, home/end",
+		"  arrows, ctrl+j/ctrl+k, mouse wheel, pgup/pgdn, home/end",
+		"  plain typing always searches, including j and k",
 		"",
 		"actions",
 		"  enter          resume selected thread",

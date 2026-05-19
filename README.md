@@ -31,7 +31,7 @@ cx --no-alt-screen
 Keyboard:
 
 - type to search
-- `j`/`k` or arrows to move
+- arrows, `ctrl+j`/`ctrl+k`, mouse wheel, page keys, home/end to move
 - `enter` to run `codex resume <session-id>`
 - `ctrl+f` to run `codex fork <session-id>`
 - `y` copies the selected session id
@@ -41,6 +41,9 @@ Keyboard:
 - `ctrl+e` toggles detail view
 - `ctrl+v` toggles compact/comfy rows
 - `esc`/`ctrl+c` exits
+
+Plain `j` and `k` enter the search query. The direct vim-ish movement keys are
+kept on `ctrl+j` and `ctrl+k` so search stays immediate.
 
 Command mode:
 

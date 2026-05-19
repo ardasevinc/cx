@@ -55,6 +55,26 @@ func TestFilterMatchesMetadataAndTranscript(t *testing.T) {
 	}
 }
 
+func TestProjectNameSpecialCases(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	tests := []struct {
+		cwd  string
+		want string
+	}{
+		{cwd: home, want: "home"},
+		{cwd: filepath.Join(home, "Documents", "Codex", "2026-05-19", "chat"), want: "chats"},
+		{cwd: filepath.Join(home, "programming", "open-source", "cx"), want: "cx"},
+	}
+
+	for _, tt := range tests {
+		if got := projectName(tt.cwd); got != tt.want {
+			t.Fatalf("projectName(%q) = %q, want %q", tt.cwd, got, tt.want)
+		}
+	}
+}
+
 func TestLoadUsesStateDBWhenAvailable(t *testing.T) {
 	if _, err := exec.LookPath("sqlite3"); err != nil {
 		t.Skip("sqlite3 not available")

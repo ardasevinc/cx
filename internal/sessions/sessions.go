@@ -547,8 +547,11 @@ func projectName(cwd string) string {
 
 	home, err := os.UserHomeDir()
 	if err == nil {
+		if samePath(cwd, home) {
+			return "home"
+		}
 		codexDocs := filepath.Join(home, "Documents", "Codex")
-		if rel, err := filepath.Rel(codexDocs, cwd); err == nil && !strings.HasPrefix(rel, "..") {
+		if rel, err := filepath.Rel(codexDocs, cwd); err == nil && isRelativeInside(rel) {
 			return "chats"
 		}
 	}
@@ -558,6 +561,14 @@ func projectName(cwd string) string {
 		return cwd
 	}
 	return base
+}
+
+func samePath(a, b string) bool {
+	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+func isRelativeInside(rel string) bool {
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 func buildSearchText(session Session) string {
