@@ -20,6 +20,9 @@ const (
 	ActionResume Action = "resume"
 	ActionFork   Action = "fork"
 	ActionQuit   Action = "quit"
+
+	sideBySideMinWidth = 100
+	floatingMinWidth   = 42
 )
 
 type Result struct {
@@ -265,17 +268,22 @@ func (m Model) View() string {
 	}
 
 	listWidth := m.width
-	if m.preview && m.width >= 100 {
+	if m.preview && m.width >= sideBySideMinWidth {
 		listWidth = (m.width * 58) / 100
 	}
 
 	list := m.renderList(listWidth)
 	side := ""
-	if m.preview && m.width >= 100 {
-		side = m.renderSide(m.width - listWidth - 2)
+	if m.preview && m.width >= sideBySideMinWidth {
+		side = m.renderSide(m.width-listWidth-2, m.listHeight())
 	}
 
 	if side == "" {
+		if m.preview && m.width >= floatingMinWidth {
+			panelWidth := min(84, max(floatingMinWidth, m.width-6))
+			panelHeight := min(18, max(6, m.height-5))
+			list = placeFloatingPanel(list, m.renderSide(panelWidth, panelHeight), m.width)
+		}
 		b.WriteString(list)
 	} else {
 		b.WriteString(joinColumns(list, side, "  "))
@@ -454,15 +462,15 @@ func (m Model) renderRow(session sessions.Session, width int, selected bool) []s
 	}
 }
 
-func (m Model) renderSide(width int) string {
+func (m Model) renderSide(width, height int) string {
 	session := m.filtered[m.cursor]
 	if m.detail {
-		return m.renderDetail(session, width)
+		return m.renderDetail(session, width, height)
 	}
-	return m.renderPreview(session, width)
+	return m.renderPreview(session, width, height)
 }
 
-func (m Model) renderPreview(session sessions.Session, width int) string {
+func (m Model) renderPreview(session sessions.Session, width, height int) string {
 	innerWidth := max(8, width-4)
 	lines := []string{
 		sideTitleStyle.Render(truncate(session.Title, innerWidth)),
@@ -472,17 +480,17 @@ func (m Model) renderPreview(session sessions.Session, width int) string {
 	}
 	if len(session.Transcript) == 0 {
 		lines = append(lines, mutedStyle.Render("no transcript preview"))
-		return sideBoxStyle.Width(width).Render(strings.Join(lines, "\n"))
+		return sideBoxStyle.Width(width).Render(strings.Join(fitPanelLines(lines, height), "\n"))
 	}
 	for _, line := range session.Transcript {
 		role := roleStyle.Render(line.Role + ":")
 		lines = append(lines, wrap(role+" "+line.Text, innerWidth)...)
 		lines = append(lines, "")
 	}
-	return sideBoxStyle.Width(width).Render(strings.Join(lines, "\n"))
+	return sideBoxStyle.Width(width).Render(strings.Join(fitPanelLines(lines, height), "\n"))
 }
 
-func (m Model) renderDetail(session sessions.Session, width int) string {
+func (m Model) renderDetail(session sessions.Session, width, height int) string {
 	fields := []string{
 		"title: " + session.Title,
 		"id: " + session.ID,
@@ -503,7 +511,7 @@ func (m Model) renderDetail(session sessions.Session, width int) string {
 	for _, field := range fields {
 		lines = append(lines, wrap(field, innerWidth)...)
 	}
-	return sideBoxStyle.Width(width).Render(strings.Join(lines, "\n"))
+	return sideBoxStyle.Width(width).Render(strings.Join(fitPanelLines(lines, height), "\n"))
 }
 
 func compactMeta(session sessions.Session) string {
@@ -570,8 +578,8 @@ func (m Model) overlay(base string) string {
 		"  :copy resume   copy codex resume command",
 		"",
 		"views",
-		"  tab            preview panel",
-		"  ctrl+e         detail/explain panel",
+		"  tab            preview side/popup",
+		"  ctrl+e         detail/explain side/popup",
 		"  ctrl+v         compact/comfy rows",
 		"",
 		"commands",
@@ -583,6 +591,36 @@ func (m Model) overlay(base string) string {
 	panelWidth := min(74, max(40, m.width-8))
 	panel := helpBoxStyle.Width(panelWidth).Render(strings.Join(help, "\n"))
 	return base + "\n" + panel
+}
+
+func placeFloatingPanel(base, panel string, width int) string {
+	baseLines := strings.Split(base, "\n")
+	panelLines := strings.Split(panel, "\n")
+	if len(panelLines) == 0 {
+		return base
+	}
+	left := max(0, (width-lipgloss.Width(panelLines[0]))/2)
+	top := 1
+	for i, panelLine := range panelLines {
+		row := top + i
+		line := strings.Repeat(" ", left) + panelLine
+		if row >= len(baseLines) {
+			baseLines = append(baseLines, line)
+			continue
+		}
+		baseLines[row] = line
+	}
+	return strings.Join(baseLines, "\n")
+}
+
+func fitPanelLines(lines []string, height int) []string {
+	maxLines := max(1, height-2)
+	if len(lines) <= maxLines {
+		return lines
+	}
+	fitted := append([]string{}, lines[:maxLines-1]...)
+	fitted = append(fitted, mutedStyle.Render("…"))
+	return fitted
 }
 
 func joinColumns(left, right, gap string) string {

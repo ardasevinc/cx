@@ -60,3 +60,25 @@ func TestForkedSessionRowShowsMarker(t *testing.T) {
 		t.Fatalf("expected fork marker in row, got %q", row[0])
 	}
 }
+
+func TestNarrowPreviewRendersFloatingPanel(t *testing.T) {
+	model := New([]sessions.Session{
+		{
+			ID:         "one",
+			Title:      "GCP inpersona-staging pwned",
+			Project:    "vai-mobile",
+			SearchText: "gcp",
+		},
+	})
+	model.width = 80
+	model.height = 20
+
+	view := model.View()
+
+	if !strings.Contains(view, "GCP inpersona-staging pwned") {
+		t.Fatalf("expected narrow preview popup to render selected title, got %q", view)
+	}
+	if !strings.Contains(view, "no transcript preview") {
+		t.Fatalf("expected narrow preview popup content, got %q", view)
+	}
+}
