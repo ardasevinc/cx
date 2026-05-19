@@ -40,6 +40,7 @@ type Model struct {
 	width               int
 	height              int
 	preview             bool
+	previewInitialized  bool
 	detail              bool
 	previewBeforeDetail bool
 	comfy               bool
@@ -59,7 +60,6 @@ func New(items []sessions.Session) Model {
 	return Model{
 		all:      items,
 		filtered: items,
-		preview:  true,
 	}
 }
 
@@ -72,6 +72,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.initPreviewForWidth()
 	case tea.KeyMsg:
 		if m.command {
 			return m.updateCommand(msg)
@@ -93,6 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.initPreviewForWidth()
 	switch msg.Type {
 	case tea.KeyCtrlC, tea.KeyEsc:
 		return m, tea.Quit
@@ -109,6 +111,7 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clamp()
 	case tea.KeyTab:
 		m.preview = !m.preview
+		m.previewInitialized = true
 		if !m.preview {
 			m.detail = false
 		}
@@ -202,6 +205,7 @@ func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
+	m.initPreviewForWidth()
 	fields := strings.Fields(strings.ToLower(input))
 	if len(fields) == 0 {
 		return m, nil
@@ -226,6 +230,7 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 		m.help = true
 	case "p", "preview":
 		m.preview = !m.preview
+		m.previewInitialized = true
 		if !m.preview {
 			m.detail = false
 		}
@@ -255,11 +260,21 @@ func (m *Model) toggleDetail() {
 	if m.detail {
 		m.detail = false
 		m.preview = m.previewBeforeDetail
+		m.previewInitialized = true
 		return
 	}
 	m.previewBeforeDetail = m.preview
 	m.preview = true
+	m.previewInitialized = true
 	m.detail = true
+}
+
+func (m *Model) initPreviewForWidth() {
+	if m.previewInitialized {
+		return
+	}
+	m.preview = m.width >= sideBySideMinWidth
+	m.previewInitialized = true
 }
 
 func (m *Model) setView(view string) {
@@ -275,6 +290,7 @@ func (m Model) View() string {
 	if m.width == 0 {
 		return "loading cx..."
 	}
+	m.initPreviewForWidth()
 	var b strings.Builder
 	b.WriteString(m.header())
 	b.WriteString("\n")

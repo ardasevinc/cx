@@ -72,6 +72,8 @@ func TestNarrowPreviewRendersFloatingPanel(t *testing.T) {
 	})
 	model.width = 80
 	model.height = 20
+	model.preview = true
+	model.previewInitialized = true
 
 	view := model.View()
 
@@ -94,6 +96,8 @@ func TestFloatingPreviewDoesNotCoverSelectedRow(t *testing.T) {
 	model := New(items)
 	model.width = 80
 	model.height = 12
+	model.preview = true
+	model.previewInitialized = true
 	model.cursor = 2
 	model.clamp()
 
@@ -159,11 +163,36 @@ func TestPreviewToggleClosesDetail(t *testing.T) {
 	model.height = 20
 	model.detail = true
 	model.preview = true
+	model.previewInitialized = true
 
 	updated, _ := model.updateKeys(tea.KeyMsg{Type: tea.KeyTab})
 	next := updated.(Model)
 
 	if next.preview || next.detail {
 		t.Fatalf("expected tab to close preview and detail, preview=%v detail=%v", next.preview, next.detail)
+	}
+}
+
+func TestNarrowLaunchDefaultsToListOnly(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+
+	view := model.View()
+
+	if strings.Contains(view, "no transcript preview") {
+		t.Fatalf("expected narrow launch to hide preview popup by default, got %q", view)
+	}
+}
+
+func TestWideLaunchDefaultsToPreview(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 120
+	model.height = 20
+
+	view := model.View()
+
+	if !strings.Contains(view, "no transcript preview") {
+		t.Fatalf("expected wide launch to show preview by default, got %q", view)
 	}
 }
