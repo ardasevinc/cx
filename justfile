@@ -3,6 +3,14 @@ set shell := ["zsh", "-eu", "-o", "pipefail", "-c"]
 default:
     just --list
 
+gate:
+    just fmt
+    just test
+    just vet
+    just lint
+    just vuln
+    just build
+
 fmt:
     gofumpt -w .
 
@@ -24,4 +32,3 @@ build:
 
 install:
     go install ./cmd/cx
-

@@ -2,7 +2,9 @@ package picker
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ const (
 	ActionNone   Action = ""
 	ActionResume Action = "resume"
 	ActionFork   Action = "fork"
+	ActionQuit   Action = "quit"
 )
 
 type Result struct {
@@ -36,7 +39,16 @@ type Model struct {
 	preview  bool
 	detail   bool
 	comfy    bool
+	help     bool
+	command  bool
+	cmdText  string
+	notice   string
 	result   Result
+}
+
+type copyMsg struct {
+	label string
+	err   error
 }
 
 func New(items []sessions.Session) Model {
@@ -57,64 +69,183 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
-			return m, tea.Quit
-		case tea.KeyEnter:
-			m.result = m.selection(ActionResume)
-			return m, tea.Quit
-		case tea.KeyCtrlF:
-			m.result = m.selection(ActionFork)
-			return m, tea.Quit
-		case tea.KeyCtrlE:
-			m.detail = !m.detail
-		case tea.KeyCtrlV:
-			m.comfy = !m.comfy
-			m.clamp()
-		case tea.KeyTab:
-			m.preview = !m.preview
-		case tea.KeyUp:
-			m.move(-1)
-		case tea.KeyDown:
-			m.move(1)
-		case tea.KeyPgUp:
-			m.move(-m.listHeight())
-		case tea.KeyPgDown:
-			m.move(m.listHeight())
-		case tea.KeyHome:
-			m.cursor = 0
-			m.clamp()
-		case tea.KeyEnd:
-			m.cursor = len(m.filtered) - 1
-			m.clamp()
-		case tea.KeyBackspace, tea.KeyCtrlH:
-			if m.query != "" {
-				runes := []rune(m.query)
-				m.query = string(runes[:len(runes)-1])
-				m.refreshFilter()
-			}
-		case tea.KeyCtrlU:
-			m.query = ""
-			m.refreshFilter()
-		case tea.KeyRunes:
-			key := msg.String()
-			switch key {
-			case "j":
-				if m.query == "" {
-					m.move(1)
-					return m, nil
-				}
-			case "k":
-				if m.query == "" {
-					m.move(-1)
-					return m, nil
-				}
-			}
-			m.query += key
-			m.refreshFilter()
+		if m.command {
+			return m.updateCommand(msg)
+		}
+		if m.help {
+			return m.updateHelp(msg)
+		}
+		return m.updateKeys(msg)
+	case copyMsg:
+		if msg.err != nil {
+			m.notice = "copy failed: " + msg.err.Error()
+		} else {
+			m.notice = "copied " + msg.label
 		}
 	}
 	return m, nil
+}
+
+func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyCtrlC, tea.KeyEsc:
+		return m, tea.Quit
+	case tea.KeyEnter:
+		m.result = m.selection(ActionResume)
+		return m, tea.Quit
+	case tea.KeyCtrlF:
+		m.result = m.selection(ActionFork)
+		return m, tea.Quit
+	case tea.KeyCtrlE:
+		m.detail = !m.detail
+	case tea.KeyCtrlV:
+		m.comfy = !m.comfy
+		m.clamp()
+	case tea.KeyTab:
+		m.preview = !m.preview
+	case tea.KeyCtrlL:
+		m.notice = ""
+	case tea.KeyUp:
+		m.move(-1)
+	case tea.KeyDown:
+		m.move(1)
+	case tea.KeyPgUp:
+		m.move(-m.listHeight())
+	case tea.KeyPgDown:
+		m.move(m.listHeight())
+	case tea.KeyHome:
+		m.cursor = 0
+		m.clamp()
+	case tea.KeyEnd:
+		m.cursor = len(m.filtered) - 1
+		m.clamp()
+	case tea.KeyBackspace, tea.KeyCtrlH:
+		if m.query != "" {
+			runes := []rune(m.query)
+			m.query = string(runes[:len(runes)-1])
+			m.refreshFilter()
+		}
+	case tea.KeyCtrlU:
+		m.query = ""
+		m.refreshFilter()
+	case tea.KeyRunes:
+		key := msg.String()
+		switch key {
+		case ":":
+			m.command = true
+			m.cmdText = ""
+			return m, nil
+		case "?":
+			m.help = true
+			return m, nil
+		case "y":
+			return m, m.copySelection("id")
+		case "j":
+			if m.query == "" {
+				m.move(1)
+				return m, nil
+			}
+		case "k":
+			if m.query == "" {
+				m.move(-1)
+				return m, nil
+			}
+		}
+		m.query += key
+		m.refreshFilter()
+	}
+	return m, nil
+}
+
+func (m Model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc, tea.KeyCtrlC:
+		m.help = false
+	case tea.KeyRunes:
+		if msg.String() == "q" || msg.String() == "?" {
+			m.help = false
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc, tea.KeyCtrlC:
+		m.command = false
+		m.cmdText = ""
+	case tea.KeyEnter:
+		cmd := strings.TrimSpace(m.cmdText)
+		m.command = false
+		m.cmdText = ""
+		return m.executeCommand(cmd)
+	case tea.KeyBackspace, tea.KeyCtrlH:
+		if m.cmdText != "" {
+			runes := []rune(m.cmdText)
+			m.cmdText = string(runes[:len(runes)-1])
+		}
+	case tea.KeyCtrlU:
+		m.cmdText = ""
+	case tea.KeyRunes:
+		m.cmdText += msg.String()
+	}
+	return m, nil
+}
+
+func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
+	fields := strings.Fields(strings.ToLower(input))
+	if len(fields) == 0 {
+		return m, nil
+	}
+	switch fields[0] {
+	case "q", "quit", "exit":
+		m.result = Result{Action: ActionQuit}
+		return m, tea.Quit
+	case "r", "resume":
+		m.result = m.selection(ActionResume)
+		return m, tea.Quit
+	case "f", "fork":
+		m.result = m.selection(ActionFork)
+		return m, tea.Quit
+	case "y", "copy", "cp":
+		target := "id"
+		if len(fields) > 1 {
+			target = fields[1]
+		}
+		return m, m.copySelection(target)
+	case "h", "help", "?":
+		m.help = true
+	case "p", "preview":
+		m.preview = !m.preview
+	case "e", "detail", "explain":
+		m.detail = !m.detail
+	case "v", "view":
+		if len(fields) > 1 {
+			m.setView(fields[1])
+		} else {
+			m.comfy = !m.comfy
+		}
+	case "compact":
+		m.comfy = false
+	case "comfy", "comfortable":
+		m.comfy = true
+	case "clear":
+		m.query = ""
+		m.refreshFilter()
+	default:
+		m.notice = "unknown command: " + input
+	}
+	m.clamp()
+	return m, nil
+}
+
+func (m *Model) setView(view string) {
+	switch view {
+	case "compact", "dense":
+		m.comfy = false
+	case "comfy", "comfortable":
+		m.comfy = true
+	}
 }
 
 func (m Model) View() string {
@@ -129,7 +260,7 @@ func (m Model) View() string {
 		b.WriteString(emptyStyle.Render("no sessions match"))
 		b.WriteString("\n")
 		b.WriteString(m.footer())
-		return b.String()
+		return m.overlay(b.String())
 	}
 
 	listWidth := m.width
@@ -150,7 +281,7 @@ func (m Model) View() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(m.footer())
-	return b.String()
+	return m.overlay(b.String())
 }
 
 func (m Model) Result() Result {
@@ -203,6 +334,46 @@ func (m Model) selection(action Action) Result {
 	return Result{Action: action, Session: m.filtered[m.cursor]}
 }
 
+func (m Model) copySelection(target string) tea.Cmd {
+	if len(m.filtered) == 0 {
+		return nil
+	}
+	session := m.filtered[m.cursor]
+	label, value := copyValue(session, target)
+	return func() tea.Msg {
+		return copyMsg{label: label, err: writeClipboard(value)}
+	}
+}
+
+func copyValue(session sessions.Session, target string) (string, string) {
+	switch target {
+	case "path", "file", "jsonl":
+		return "path", session.Path
+	case "cwd", "dir":
+		return "cwd", session.CWD
+	case "title", "name":
+		return "title", session.Title
+	case "resume":
+		return "resume command", "codex resume " + session.ID
+	case "fork":
+		return "fork command", "codex fork " + session.ID
+	default:
+		return "id", session.ID
+	}
+}
+
+func writeClipboard(value string) error {
+	if value == "" {
+		return fmt.Errorf("empty value")
+	}
+	if runtime.GOOS == "darwin" {
+		cmd := exec.Command("pbcopy")
+		cmd.Stdin = strings.NewReader(value)
+		return cmd.Run()
+	}
+	return fmt.Errorf("clipboard unsupported on %s", runtime.GOOS)
+}
+
 func (m Model) listHeight() int {
 	reserved := 3
 	if m.height <= reserved {
@@ -225,6 +396,9 @@ func (m Model) header() string {
 }
 
 func (m Model) footer() string {
+	if m.command {
+		return commandStyle.Width(m.width).Render(":" + m.cmdText)
+	}
 	mode := "compact"
 	if m.comfy {
 		mode = "comfy"
@@ -233,7 +407,10 @@ func (m Model) footer() string {
 	if !m.preview {
 		preview = "preview:off"
 	}
-	text := "enter resume  ctrl+f fork  tab preview  ctrl+e detail  ctrl+v " + mode + "  " + preview + "  esc quit"
+	text := "enter resume  ctrl+f fork  y copy  : cmd  ? help  tab preview  ctrl+e detail  ctrl+v " + mode + "  " + preview
+	if m.notice != "" {
+		text = m.notice + "  " + text
+	}
 	return footerStyle.Width(m.width).Render(truncate(text, m.width))
 }
 
@@ -257,7 +434,7 @@ func (m Model) renderRow(session sessions.Session, width int, selected bool) []s
 	prefix := "  "
 	style := rowStyle
 	if selected {
-		prefix = "> "
+		prefix = "▌ "
 		style = selectedStyle
 	}
 
@@ -265,7 +442,7 @@ func (m Model) renderRow(session sessions.Session, width int, selected bool) []s
 	if title == "" {
 		title = session.ID
 	}
-	meta := fmt.Sprintf("%s  %s  %s", session.Project, shortTime(session.UpdatedAt), filepath.Base(session.CWD))
+	meta := fmt.Sprintf("%s  %s  %s", projectStyle.Render(session.Project), shortTime(session.UpdatedAt), filepath.Base(session.CWD))
 	first := prefix + title
 	if width > 40 {
 		padding := width - lipgloss.Width(prefix) - lipgloss.Width(title) - lipgloss.Width(meta) - 1
@@ -279,7 +456,7 @@ func (m Model) renderRow(session sessions.Session, width int, selected bool) []s
 		return []string{style.Width(width).Render(first)}
 	}
 
-	second := "  " + mutedStyle.Render(truncate(session.Preview, max(10, width-2)))
+	second := "  " + previewStyle.Render(truncate(session.Preview, max(10, width-2)))
 	return []string{
 		style.Width(width).Render(first),
 		style.Width(width).Render(second),
@@ -295,21 +472,23 @@ func (m Model) renderSide(width int) string {
 }
 
 func (m Model) renderPreview(session sessions.Session, width int) string {
+	innerWidth := max(8, width-4)
 	lines := []string{
-		sideTitleStyle.Render(truncate(session.Title, width)),
-		mutedStyle.Render(truncate(session.ID, width)),
+		sideTitleStyle.Render(truncate(session.Title, innerWidth)),
+		mutedStyle.Render(truncate(session.Project+"  "+shortTime(session.UpdatedAt), innerWidth)),
+		mutedStyle.Render(truncate(session.ID, innerWidth)),
 		"",
 	}
 	if len(session.Transcript) == 0 {
 		lines = append(lines, mutedStyle.Render("no transcript preview"))
-		return boxStyle.Width(width).Render(strings.Join(lines, "\n"))
+		return sideBoxStyle.Width(width).Render(strings.Join(lines, "\n"))
 	}
 	for _, line := range session.Transcript {
 		role := roleStyle.Render(line.Role + ":")
-		lines = append(lines, wrap(role+" "+line.Text, width)...)
+		lines = append(lines, wrap(role+" "+line.Text, innerWidth)...)
 		lines = append(lines, "")
 	}
-	return boxStyle.Width(width).Render(strings.Join(lines, "\n"))
+	return sideBoxStyle.Width(width).Render(strings.Join(lines, "\n"))
 }
 
 func (m Model) renderDetail(session sessions.Session, width int) string {
@@ -325,11 +504,45 @@ func (m Model) renderDetail(session sessions.Session, width int) string {
 		"cwd: " + session.CWD,
 		"path: " + session.Path,
 	}
+	innerWidth := max(8, width-4)
 	lines := []string{sideTitleStyle.Render("details"), ""}
 	for _, field := range fields {
-		lines = append(lines, wrap(field, width)...)
+		lines = append(lines, wrap(field, innerWidth)...)
 	}
-	return boxStyle.Width(width).Render(strings.Join(lines, "\n"))
+	return sideBoxStyle.Width(width).Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) overlay(base string) string {
+	if !m.help {
+		return base
+	}
+	help := []string{
+		helpTitleStyle.Render("cx help"),
+		"",
+		"navigation",
+		"  j/k, arrows, pgup/pgdn, home/end",
+		"",
+		"actions",
+		"  enter          resume selected thread",
+		"  ctrl+f         fork selected thread",
+		"  y              copy selected session id",
+		"  :copy path     copy rollout jsonl path",
+		"  :copy resume   copy codex resume command",
+		"",
+		"views",
+		"  tab            preview panel",
+		"  ctrl+e         detail/explain panel",
+		"  ctrl+v         compact/comfy rows",
+		"",
+		"commands",
+		"  :resume  :fork  :copy [id|path|cwd|title|resume|fork]",
+		"  :view [compact|comfy]  :preview  :detail  :clear  :quit",
+		"",
+		"press ? or esc to close",
+	}
+	panelWidth := min(74, max(40, m.width-8))
+	panel := helpBoxStyle.Width(panelWidth).Render(strings.Join(help, "\n"))
+	return base + "\n" + panel
 }
 
 func joinColumns(left, right, gap string) string {
@@ -402,13 +615,18 @@ func fullTime(t time.Time) string {
 }
 
 var (
-	headerStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("111"))
-	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
-	mutedStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
-	rowStyle       = lipgloss.NewStyle()
-	selectedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("235"))
-	emptyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("242"))
-	boxStyle       = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1)
-	sideTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("111"))
-	roleStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("109"))
+	headerStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115")).Padding(0, 1)
+	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Padding(0, 1)
+	commandStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236")).Padding(0, 1)
+	mutedStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	projectStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("109"))
+	previewStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	rowStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	selectedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236"))
+	emptyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Padding(1, 2)
+	sideBoxStyle   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1)
+	helpBoxStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("109")).Padding(1, 2)
+	helpTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115"))
+	sideTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115"))
+	roleStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Bold(true)
 )

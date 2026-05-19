@@ -22,6 +22,9 @@ the selected thread.
 ```sh
 cx
 cx --list --limit 20
+cx list --limit 20
+cx version
+cx -V
 cx --no-alt-screen
 ```
 
@@ -31,14 +34,31 @@ Keyboard:
 - `j`/`k` or arrows to move
 - `enter` to run `codex resume <session-id>`
 - `ctrl+f` to run `codex fork <session-id>`
+- `y` copies the selected session id
+- `:` opens command mode
+- `?` opens help
 - `tab` toggles preview
 - `ctrl+e` toggles detail view
 - `ctrl+v` toggles compact/comfy rows
 - `esc`/`ctrl+c` exits
 
+Command mode:
+
+```text
+:resume
+:fork
+:copy id|path|cwd|title|resume|fork
+:view compact|comfy
+:preview
+:detail
+:clear
+:quit
+```
+
 ## Development
 
 ```sh
+just gate
 just fmt
 just test
 just lint
