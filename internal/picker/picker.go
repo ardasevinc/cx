@@ -436,6 +436,9 @@ func (m Model) renderRow(session sessions.Session, width int, selected bool) []s
 	if title == "" {
 		title = session.ID
 	}
+	if session.ParentID != "" {
+		title = "↳ " + title
+	}
 	meta := compactMeta(session)
 	first := lineWithMeta(prefix, title, meta, width)
 
@@ -494,6 +497,9 @@ func (m Model) renderDetail(session sessions.Session, width int) string {
 		"updated: " + fullTime(session.UpdatedAt),
 		"cwd: " + session.CWD,
 		"path: " + session.Path,
+	}
+	if session.ParentID != "" {
+		fields = append(fields[:2], append([]string{"forked from: " + session.ParentID}, fields[2:]...)...)
 	}
 	innerWidth := max(8, width-4)
 	lines := []string{sideTitleStyle.Render("details"), ""}

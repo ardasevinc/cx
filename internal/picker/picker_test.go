@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,5 +46,17 @@ func TestMouseWheelMovesSelection(t *testing.T) {
 
 	if next.cursor != 1 {
 		t.Fatalf("expected wheel down to move one row, got cursor %d", next.cursor)
+	}
+}
+
+func TestForkedSessionRowShowsMarker(t *testing.T) {
+	model := New([]sessions.Session{{ID: "fork", Title: "GCP inpersona-staging pwned", ParentID: "parent"}})
+	row := model.renderRow(model.all[0], 80, false)
+
+	if len(row) != 1 {
+		t.Fatalf("expected compact row, got %#v", row)
+	}
+	if !strings.Contains(row[0], "↳ GCP inpersona-staging pwned") {
+		t.Fatalf("expected fork marker in row, got %q", row[0])
 	}
 }
