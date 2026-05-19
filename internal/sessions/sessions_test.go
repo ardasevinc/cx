@@ -10,18 +10,20 @@ import (
 
 func TestLoadIndexesSessionsByUpdatedTime(t *testing.T) {
 	root := t.TempDir()
+	home := filepath.Join(root, "home", "alice")
+	t.Setenv("HOME", home)
 	codexHome := filepath.Join(root, ".codex")
 	sessionDir := filepath.Join(codexHome, "sessions", "2026", "05", "19")
 	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	writeRollout(t, filepath.Join(sessionDir, "rollout-old.jsonl"), `{"type":"session_meta","payload":{"id":"old","timestamp":"2026-05-19T10:00:00Z","cwd":"/Users/arda/programming/open-source/cx","source":"cli","thread_source":"user"}}
+	writeRollout(t, filepath.Join(sessionDir, "rollout-old.jsonl"), `{"type":"session_meta","payload":{"id":"old","timestamp":"2026-05-19T10:00:00Z","cwd":"/home/alice/src/cx","source":"cli","thread_source":"user"}}
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions ignored"}]}}
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"build session picker"}]}}
 {"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"working on it"}]}}
 `)
-	writeRollout(t, filepath.Join(sessionDir, "rollout-new.jsonl"), `{"type":"session_meta","payload":{"id":"new","timestamp":"2026-05-19T11:00:00Z","cwd":"/Users/arda/Documents/Codex/2026-05-19/codex-hey","source":"cli","thread_source":"user"}}
+	writeRollout(t, filepath.Join(sessionDir, "rollout-new.jsonl"), `{"type":"session_meta","payload":{"id":"new","timestamp":"2026-05-19T11:00:00Z","cwd":"`+filepath.Join(home, "Documents", "Codex", "2026-05-19", "codex-hey")+`","source":"cli","thread_source":"user"}}
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"resume vpn thread"}]}}
 `)
 
@@ -183,14 +185,14 @@ create table threads (
   preview text not null default ''
 );
 insert into threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, tokens_used, archived, created_at_ms, updated_at_ms, first_user_message, thread_source, preview)
-values ('named-thread', '/tmp/named-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/cx', 'uh.. codex... we have an issue', '{}', 'never', 42, 0, 1000, 2000, 'uh.. codex... we have an issue', 'user', 'uh.. codex... we have an issue');
+	values ('named-thread', '/tmp/named-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/cx', 'start the billing audit', '{}', 'never', 42, 0, 1000, 2000, 'start the billing audit', 'user', 'start the billing audit');
 `
 	cmd := exec.Command("sqlite3", dbPath, sql)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("sqlite3 setup failed: %v\n%s", err, output)
 	}
 	writeRollout(t, filepath.Join(codexHome, "session_index.jsonl"), `{"id":"named-thread","thread_name":"Investigate issue","updated_at":"2026-05-12T19:18:49Z"}
-{"id":"named-thread","thread_name":"GCP inpersona-staging pwned","updated_at":"2026-05-12T19:59:18Z"}
+{"id":"named-thread","thread_name":"Production billing audit","updated_at":"2026-05-12T19:59:18Z"}
 `)
 
 	sessions, err := Load(Options{CodexHome: codexHome})
@@ -200,10 +202,10 @@ values ('named-thread', '/tmp/named-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(sessions))
 	}
-	if sessions[0].Title != "GCP inpersona-staging pwned" {
+	if sessions[0].Title != "Production billing audit" {
 		t.Fatalf("expected session-index title, got %q", sessions[0].Title)
 	}
-	if !strings.Contains(sessions[0].SearchText, "gcp inpersona-staging pwned") {
+	if !strings.Contains(sessions[0].SearchText, "production billing audit") {
 		t.Fatalf("expected custom title to be searchable: %q", sessions[0].SearchText)
 	}
 }
@@ -257,13 +259,13 @@ create table threads (
   preview text not null default ''
 );
 insert into threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, archived, created_at_ms, updated_at_ms, first_user_message, thread_source, preview)
-values ('fork-thread', '` + forkPath + `', 1, 2, 'cli', 'openai', '/tmp/cx', 'uh.. codex... we have an issue', '{}', 'never', 0, 1000, 2000, 'uh.. codex... we have an issue', 'user', 'uh.. codex... we have an issue');
+values ('fork-thread', '` + forkPath + `', 1, 2, 'cli', 'openai', '/tmp/cx', 'start the billing audit', '{}', 'never', 0, 1000, 2000, 'start the billing audit', 'user', 'start the billing audit');
 `
 	cmd := exec.Command("sqlite3", dbPath, sql)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("sqlite3 setup failed: %v\n%s", err, output)
 	}
-	writeRollout(t, filepath.Join(codexHome, "session_index.jsonl"), `{"id":"parent-thread","thread_name":"GCP inpersona-staging pwned","updated_at":"2026-05-12T19:59:18Z"}
+	writeRollout(t, filepath.Join(codexHome, "session_index.jsonl"), `{"id":"parent-thread","thread_name":"Production billing audit","updated_at":"2026-05-12T19:59:18Z"}
 `)
 
 	sessions, err := Load(Options{CodexHome: codexHome})
@@ -273,7 +275,7 @@ values ('fork-thread', '` + forkPath + `', 1, 2, 'cli', 'openai', '/tmp/cx', 'uh
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(sessions))
 	}
-	if sessions[0].Title != "GCP inpersona-staging pwned" {
+	if sessions[0].Title != "Production billing audit" {
 		t.Fatalf("expected inherited parent title, got %q", sessions[0].Title)
 	}
 	if sessions[0].ParentID != "parent-thread" {

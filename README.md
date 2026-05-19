@@ -24,6 +24,17 @@ Requirements:
 - `sqlite3` on `PATH` for the fast state-db path. `cx` falls back to JSONL scans
   if unavailable.
 
+## Privacy and compatibility
+
+`cx` is local-only. It reads Codex session metadata/transcripts from your
+machine and launches the `codex` CLI; it does not upload session data or call a
+remote service.
+
+Codex's local storage format is not a stable public API. `cx` follows the
+currently observed `~/.codex/state_5.sqlite`, `~/.codex/session_index.jsonl`,
+and rollout JSONL formats, so future Codex releases may require compatibility
+updates.
+
 ## Use
 
 ```sh

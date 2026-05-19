@@ -50,13 +50,13 @@ func TestMouseWheelMovesSelection(t *testing.T) {
 }
 
 func TestForkedSessionRowShowsMarker(t *testing.T) {
-	model := New([]sessions.Session{{ID: "fork", Title: "GCP inpersona-staging pwned", ParentID: "parent"}})
+	model := New([]sessions.Session{{ID: "fork", Title: "Production billing audit", ParentID: "parent"}})
 	row := model.renderRow(model.all[0], 80, false)
 
 	if len(row) != 1 {
 		t.Fatalf("expected compact row, got %#v", row)
 	}
-	if !strings.Contains(row[0], "GCP inpersona-staging pwned") || !strings.Contains(row[0], "⎇ unknown") {
+	if !strings.Contains(row[0], "Production billing audit") || !strings.Contains(row[0], "⎇ unknown") {
 		t.Fatalf("expected fork marker in row, got %q", row[0])
 	}
 }
@@ -65,9 +65,9 @@ func TestNarrowPreviewRendersFloatingPanel(t *testing.T) {
 	model := New([]sessions.Session{
 		{
 			ID:         "one",
-			Title:      "GCP inpersona-staging pwned",
-			Project:    "vai-mobile",
-			SearchText: "gcp",
+			Title:      "Production billing audit",
+			Project:    "billing-api",
+			SearchText: "billing",
 		},
 	})
 	model.width = 80
@@ -77,7 +77,7 @@ func TestNarrowPreviewRendersFloatingPanel(t *testing.T) {
 
 	view := model.View()
 
-	if !strings.Contains(view, "GCP inpersona-staging pwned") {
+	if !strings.Contains(view, "Production billing audit") {
 		t.Fatalf("expected narrow preview popup to render selected title, got %q", view)
 	}
 	if !strings.Contains(view, "no transcript preview") {
