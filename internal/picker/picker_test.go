@@ -44,14 +44,97 @@ func TestMouseWheelMovesSelection(t *testing.T) {
 	updated, _ := model.updateMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
 	next := updated.(Model)
 
-	if next.cursor != 1 {
+	if next.cursor != 2 {
 		t.Fatalf("expected wheel down to move one row, got cursor %d", next.cursor)
+	}
+}
+
+func TestNewChatRowRendersAboveSessions(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+
+	view := model.View()
+
+	if !strings.Contains(view, "+ new chat") || !strings.Contains(view, "today · Documents/Codex") {
+		t.Fatalf("expected pinned new chat row, got %q", view)
+	}
+	if model.cursor != 1 {
+		t.Fatalf("expected default cursor on first real session, got %d", model.cursor)
+	}
+}
+
+func TestEnterOnNewChatRowReturnsNewChatAction(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+	model.cursor = 0
+
+	updated, _ := model.updateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	next := updated.(Model)
+
+	if next.result.Action != ActionNew || !next.result.Chat {
+		t.Fatalf("expected new chat action, got %#v", next.result)
+	}
+}
+
+func TestProjectViewStartsNewThreadInProject(t *testing.T) {
+	model := New([]sessions.Session{
+		{ID: "chat", Title: "chat", Project: "chats", CWD: "/home/alice/Documents/Codex/2026-05-20/chat-001"},
+		{ID: "project", Title: "project", Project: "cx", CWD: "/home/alice/src/cx"},
+	})
+	model.width = 80
+	model.height = 20
+
+	updated, _ := model.executeCommand("view projects")
+	next := updated.(Model)
+	if next.view != viewProjects {
+		t.Fatalf("expected projects view, got %q", next.view)
+	}
+	if !strings.Contains(next.View(), "chats") || !strings.Contains(next.View(), "cx") {
+		t.Fatalf("expected projects and chats rows, got %q", next.View())
+	}
+
+	for i, row := range next.rows {
+		if row.Kind == rowProject && row.Title == "cx" {
+			next.cursor = i
+			break
+		}
+	}
+	updated, _ = next.updateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	result := updated.(Model).result
+
+	if result.Action != ActionNew || result.Dir != "/home/alice/src/cx" {
+		t.Fatalf("expected project new action, got %#v", result)
+	}
+}
+
+func TestGroupedViewTogglesProjectGroup(t *testing.T) {
+	model := New([]sessions.Session{
+		{ID: "one", Title: "one", Project: "cx", CWD: "/home/alice/src/cx"},
+		{ID: "two", Title: "two", Project: "cx", CWD: "/home/alice/src/cx"},
+	})
+	model.width = 80
+	model.height = 20
+
+	updated, _ := model.executeCommand("group projects")
+	next := updated.(Model)
+	if !strings.Contains(next.View(), "▾ cx") || !strings.Contains(next.View(), "one") {
+		t.Fatalf("expected expanded project group, got %q", next.View())
+	}
+
+	next.cursor = 1
+	updated, _ = next.updateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	next = updated.(Model)
+
+	if !strings.Contains(next.View(), "▸ cx") || strings.Contains(next.View(), "one") {
+		t.Fatalf("expected collapsed project group, got %q", next.View())
 	}
 }
 
 func TestForkedSessionRowShowsMarker(t *testing.T) {
 	model := New([]sessions.Session{{ID: "fork", Title: "Production billing audit", ParentID: "parent"}})
-	row := model.renderRow(model.all[0], 80, false)
+	row := model.renderRow(sessionRow(model.all[0], 0), 80, false)
 
 	if len(row) != 1 {
 		t.Fatalf("expected compact row, got %#v", row)
@@ -98,7 +181,7 @@ func TestFloatingPreviewDoesNotCoverSelectedRow(t *testing.T) {
 	model.height = 12
 	model.preview = true
 	model.previewInitialized = true
-	model.cursor = 2
+	model.cursor = 3
 	model.clamp()
 
 	view := model.View()

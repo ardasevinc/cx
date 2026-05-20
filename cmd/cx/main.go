@@ -121,7 +121,10 @@ TUI keys:
   arrows, ^j/^k       Move selection.
   mouse wheel         Move selection.
   pgup/pgdn home/end  Jump around the list.
-  enter               Run codex --yolo -C <cwd> resume <session-id>.
+  enter               Resume session, start selected new chat/project, or toggle group.
+  ^n                  Start fresh Codex in selected session/project context.
+  ^p                  Show project launcher.
+  ^g                  Show grouped projects.
   ^f                  Run codex --yolo -C <cwd> fork <session-id>.
   y                   Copy selected session id.
   :                   Command mode.
@@ -132,10 +135,13 @@ TUI keys:
   esc, ^c             Exit.
 
 Commands:
+  :new [name]
   :resume
   :fork
   :copy id|path|cwd|title|resume|fork
-  :view compact|comfy
+  :view all|chats|projects|grouped|compact|comfy
+  :group projects|chats
+  :open | :close | :toggle | :open-all | :close-all
   :preview
   :detail
   :clear
@@ -209,6 +215,23 @@ func printList(out io.Writer, items []sessions.Session, limit int) {
 }
 
 func runCodex(result picker.Result) error {
+	if result.Action == picker.ActionNew {
+		if result.Chat {
+			plan, err := launcher.PlanChat(result.Name, launcher.Options{})
+			if err != nil {
+				return err
+			}
+			return runCodexFresh(plan.Dir)
+		}
+		if result.Dir != "" {
+			return runCodexFresh(result.Dir)
+		}
+		plan, err := launcher.PlanChat("", launcher.Options{})
+		if err != nil {
+			return err
+		}
+		return runCodexFresh(plan.Dir)
+	}
 	args := []string{"--yolo"}
 	if result.Session.CWD != "" {
 		args = append(args, "-C", result.Session.CWD)

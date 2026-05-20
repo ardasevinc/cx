@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ const (
 	ActionNone   Action = ""
 	ActionResume Action = "resume"
 	ActionFork   Action = "fork"
+	ActionNew    Action = "new"
 	ActionQuit   Action = "quit"
 
 	sideBySideMinWidth = 100
@@ -29,16 +31,62 @@ const (
 type Result struct {
 	Action  Action
 	Session sessions.Session
+	Dir     string
+	Chat    bool
+	Name    string
+}
+
+type viewMode string
+
+const (
+	viewAll      viewMode = "all"
+	viewChats    viewMode = "chats"
+	viewProjects viewMode = "projects"
+	viewGrouped  viewMode = "grouped"
+)
+
+type groupMode string
+
+const (
+	groupProjects groupMode = "projects"
+	groupChats    groupMode = "chats"
+)
+
+type rowKind int
+
+const (
+	rowNewChat rowKind = iota
+	rowSession
+	rowProject
+	rowGroup
+)
+
+type row struct {
+	Kind     rowKind
+	ID       string
+	Title    string
+	Meta     string
+	Dir      string
+	Depth    int
+	Count    int
+	Latest   time.Time
+	Chat     bool
+	Expanded bool
+	Session  sessions.Session
 }
 
 type Model struct {
 	all                 []sessions.Session
 	filtered            []sessions.Session
+	rows                []row
 	query               string
 	cursor              int
 	offset              int
 	width               int
 	height              int
+	view                viewMode
+	group               groupMode
+	collapsed           map[string]bool
 	preview             bool
 	previewInitialized  bool
 	detail              bool
@@ -57,10 +105,15 @@ type copyMsg struct {
 }
 
 func New(items []sessions.Session) Model {
-	return Model{
-		all:      items,
-		filtered: items,
+	model := Model{
+		all:       items,
+		filtered:  items,
+		view:      viewAll,
+		group:     groupProjects,
+		collapsed: make(map[string]bool),
 	}
+	model.refreshRows()
+	return model
 }
 
 func (m Model) Init() tea.Cmd {
@@ -99,11 +152,25 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlC, tea.KeyEsc:
 		return m, tea.Quit
 	case tea.KeyEnter:
-		m.result = m.selection(ActionResume)
+		result, toggled := m.enterSelection()
+		if toggled {
+			return m, nil
+		}
+		m.result = result
 		return m, tea.Quit
 	case tea.KeyCtrlF:
 		m.result = m.selection(ActionFork)
 		return m, tea.Quit
+	case tea.KeyCtrlN:
+		m.result = m.newSelection()
+		return m, tea.Quit
+	case tea.KeyCtrlP:
+		m.view = viewProjects
+		m.refreshRows()
+	case tea.KeyCtrlG:
+		m.view = viewGrouped
+		m.group = groupProjects
+		m.refreshRows()
 	case tea.KeyCtrlE:
 		m.toggleDetail()
 	case tea.KeyCtrlV:
@@ -129,17 +196,17 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		m.clamp()
 	case tea.KeyEnd:
-		m.cursor = len(m.filtered) - 1
+		m.cursor = len(m.rows) - 1
 		m.clamp()
 	case tea.KeyBackspace, tea.KeyCtrlH:
 		if m.query != "" {
 			runes := []rune(m.query)
 			m.query = string(runes[:len(runes)-1])
-			m.refreshFilter()
+			m.refreshRows()
 		}
 	case tea.KeyCtrlU:
 		m.query = ""
-		m.refreshFilter()
+		m.refreshRows()
 	case tea.KeyRunes:
 		key := msg.String()
 		switch key {
@@ -154,7 +221,7 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.copySelection("id")
 		}
 		m.query += key
-		m.refreshFilter()
+		m.refreshRows()
 	}
 	return m, nil
 }
@@ -206,16 +273,20 @@ func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 	m.initPreviewForWidth()
-	fields := strings.Fields(strings.ToLower(input))
+	fields := strings.Fields(input)
 	if len(fields) == 0 {
 		return m, nil
 	}
-	switch fields[0] {
+	command := strings.ToLower(fields[0])
+	switch command {
 	case "q", "quit", "exit":
 		m.result = Result{Action: ActionQuit}
 		return m, tea.Quit
 	case "r", "resume":
 		m.result = m.selection(ActionResume)
+		return m, tea.Quit
+	case "n", "new":
+		m.result = Result{Action: ActionNew, Chat: true, Name: strings.Join(fields[1:], " ")}
 		return m, tea.Quit
 	case "f", "fork":
 		m.result = m.selection(ActionFork)
@@ -223,7 +294,7 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 	case "y", "copy", "cp":
 		target := "id"
 		if len(fields) > 1 {
-			target = fields[1]
+			target = strings.ToLower(fields[1])
 		}
 		return m, m.copySelection(target)
 	case "h", "help", "?":
@@ -238,17 +309,33 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 		m.toggleDetail()
 	case "v", "view":
 		if len(fields) > 1 {
-			m.setView(fields[1])
+			m.setView(strings.ToLower(fields[1]))
 		} else {
 			m.comfy = !m.comfy
 		}
+	case "g", "group":
+		m.view = viewGrouped
+		if len(fields) > 1 {
+			m.setGroup(strings.ToLower(fields[1]))
+		}
+		m.refreshRows()
+	case "open":
+		m.setSelectedGroupCollapsed(false)
+	case "close":
+		m.setSelectedGroupCollapsed(true)
+	case "toggle":
+		m.toggleSelectedGroup()
+	case "open-all":
+		m.setAllGroupsCollapsed(false)
+	case "close-all":
+		m.setAllGroupsCollapsed(true)
 	case "compact":
 		m.comfy = false
 	case "comfy", "comfortable":
 		m.comfy = true
 	case "clear":
 		m.query = ""
-		m.refreshFilter()
+		m.refreshRows()
 	default:
 		m.notice = "unknown command: " + input
 	}
@@ -279,10 +366,31 @@ func (m *Model) initPreviewForWidth() {
 
 func (m *Model) setView(view string) {
 	switch view {
+	case "all", "sessions":
+		m.view = viewAll
+		m.refreshRows()
+	case "chats":
+		m.view = viewChats
+		m.refreshRows()
+	case "projects", "project":
+		m.view = viewProjects
+		m.refreshRows()
+	case "grouped", "tree":
+		m.view = viewGrouped
+		m.refreshRows()
 	case "compact", "dense":
 		m.comfy = false
 	case "comfy", "comfortable":
 		m.comfy = true
+	}
+}
+
+func (m *Model) setGroup(group string) {
+	switch group {
+	case "chats", "chat":
+		m.group = groupChats
+	case "projects", "project":
+		m.group = groupProjects
 	}
 }
 
@@ -295,7 +403,7 @@ func (m Model) View() string {
 	b.WriteString(m.header())
 	b.WriteString("\n")
 
-	if len(m.filtered) == 0 {
+	if len(m.rows) == 0 {
 		b.WriteString(emptyStyle.Render("no sessions match"))
 		b.WriteString("\n")
 		b.WriteString(m.footer())
@@ -332,15 +440,249 @@ func (m Model) Result() Result {
 	return m.result
 }
 
-func (m *Model) refreshFilter() {
+func (m Model) firstSessionCursor() int {
+	for i, row := range m.rows {
+		if row.Kind == rowSession {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m Model) selectedRow() (row, bool) {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return row{}, false
+	}
+	return m.rows[m.cursor], true
+}
+
+func (m *Model) toggleSelectedGroup() bool {
+	selected, ok := m.selectedRow()
+	if !ok || selected.Kind != rowGroup {
+		return false
+	}
+	m.collapsed[selected.ID] = !m.collapsed[selected.ID]
+	m.refreshRowsKeepingCursor(selected.ID)
+	return true
+}
+
+func (m *Model) setSelectedGroupCollapsed(collapsed bool) {
+	selected, ok := m.selectedRow()
+	if !ok || selected.Kind != rowGroup {
+		return
+	}
+	m.collapsed[selected.ID] = collapsed
+	m.refreshRowsKeepingCursor(selected.ID)
+}
+
+func (m *Model) setAllGroupsCollapsed(collapsed bool) {
+	for _, row := range m.rows {
+		if row.Kind == rowGroup {
+			m.collapsed[row.ID] = collapsed
+		}
+	}
+	m.refreshRows()
+}
+
+func (m *Model) refreshRowsKeepingCursor(id string) {
 	m.filtered = sessions.Filter(m.all, m.query)
-	m.cursor = 0
+	m.rows = m.buildRows()
+	for i, row := range m.rows {
+		if row.ID == id {
+			m.cursor = i
+			if m.height > 0 {
+				m.clamp()
+			}
+			return
+		}
+	}
+	if m.height > 0 {
+		m.clamp()
+	}
+}
+
+func (m *Model) refreshRows() {
+	m.filtered = sessions.Filter(m.all, m.query)
+	m.rows = m.buildRows()
+	m.cursor = m.firstSessionCursor()
 	m.offset = 0
-	m.clamp()
+	if m.height > 0 {
+		m.clamp()
+	}
+}
+
+func (m Model) buildRows() []row {
+	rows := make([]row, 0, len(m.filtered)+1)
+	if m.query == "" {
+		rows = append(rows, row{
+			Kind:  rowNewChat,
+			ID:    "action:new-chat",
+			Title: "+ new chat",
+			Meta:  "today · Documents/Codex",
+			Chat:  true,
+		})
+	}
+
+	switch m.view {
+	case viewChats:
+		for _, session := range m.filtered {
+			if isChatSession(session) {
+				rows = append(rows, sessionRow(session, 0))
+			}
+		}
+	case viewProjects:
+		rows = append(rows, projectRows(m.filtered)...)
+	case viewGrouped:
+		if m.group == groupChats {
+			rows = append(rows, m.groupedChatRows()...)
+		} else {
+			rows = append(rows, m.groupedProjectRows()...)
+		}
+	default:
+		for _, session := range m.filtered {
+			rows = append(rows, sessionRow(session, 0))
+		}
+	}
+	return rows
+}
+
+func sessionRow(session sessions.Session, depth int) row {
+	return row{
+		Kind:    rowSession,
+		ID:      "session:" + session.ID,
+		Title:   session.Title,
+		Meta:    compactMeta(session),
+		Depth:   depth,
+		Dir:     session.CWD,
+		Chat:    isChatSession(session),
+		Session: session,
+		Latest:  session.UpdatedAt,
+	}
+}
+
+func projectRows(items []sessions.Session) []row {
+	projects := make(map[string]row)
+	var chats row
+	for _, session := range items {
+		if isChatSession(session) {
+			chats.Kind = rowProject
+			chats.ID = "project:chats"
+			chats.Title = "chats"
+			chats.Chat = true
+			chats.Count++
+			if session.UpdatedAt.After(chats.Latest) {
+				chats.Latest = session.UpdatedAt
+			}
+			continue
+		}
+		if strings.TrimSpace(session.CWD) == "" {
+			continue
+		}
+		key := session.CWD
+		project := projects[key]
+		project.Kind = rowProject
+		project.ID = "project:" + key
+		project.Title = firstNonEmpty(session.Project, session.CWD)
+		project.Dir = session.CWD
+		project.Count++
+		if session.UpdatedAt.After(project.Latest) {
+			project.Latest = session.UpdatedAt
+		}
+		projects[key] = project
+	}
+
+	rows := make([]row, 0, len(projects)+1)
+	if chats.Count > 0 {
+		chats.Meta = countMeta(chats.Count, chats.Latest)
+		rows = append(rows, chats)
+	}
+	for _, project := range projects {
+		project.Meta = countMeta(project.Count, project.Latest)
+		rows = append(rows, project)
+	}
+	sortRows(rows)
+	if len(rows) > 0 && rows[0].Chat {
+		return rows
+	}
+	for i, item := range rows {
+		if item.Chat {
+			rows = append([]row{item}, append(rows[:i], rows[i+1:]...)...)
+			break
+		}
+	}
+	return rows
+}
+
+func (m Model) groupedProjectRows() []row {
+	rows := make([]row, 0, len(m.filtered))
+	for _, group := range projectRows(m.filtered) {
+		key := "group:" + group.ID
+		collapsed := m.query == "" && m.collapsed[key]
+		group.Kind = rowGroup
+		group.ID = key
+		group.Expanded = !collapsed
+		group.Meta = countMeta(group.Count, group.Latest)
+		rows = append(rows, group)
+		if collapsed {
+			continue
+		}
+		for _, session := range m.filtered {
+			if group.Chat != isChatSession(session) {
+				continue
+			}
+			if !group.Chat && session.CWD != group.Dir {
+				continue
+			}
+			rows = append(rows, sessionRow(session, 1))
+		}
+	}
+	return rows
+}
+
+func (m Model) groupedChatRows() []row {
+	groups := make(map[string]row)
+	for _, session := range m.filtered {
+		if !isChatSession(session) {
+			continue
+		}
+		key := chatDateKey(session)
+		group := groups[key]
+		group.Kind = rowGroup
+		group.ID = "group:chats:" + key
+		group.Title = chatDateTitle(key)
+		group.Chat = true
+		group.Count++
+		if session.UpdatedAt.After(group.Latest) {
+			group.Latest = session.UpdatedAt
+		}
+		groups[key] = group
+	}
+	groupRows := make([]row, 0, len(groups))
+	for _, group := range groups {
+		group.Meta = countMeta(group.Count, group.Latest)
+		groupRows = append(groupRows, group)
+	}
+	sortRows(groupRows)
+
+	rows := make([]row, 0, len(m.filtered)+len(groupRows))
+	for _, group := range groupRows {
+		collapsed := m.query == "" && m.collapsed[group.ID]
+		group.Expanded = !collapsed
+		rows = append(rows, group)
+		if collapsed {
+			continue
+		}
+		for _, session := range m.filtered {
+			if isChatSession(session) && chatDateKey(session) == strings.TrimPrefix(group.ID, "group:chats:") {
+				rows = append(rows, sessionRow(session, 1))
+			}
+		}
+	}
+	return rows
 }
 
 func (m *Model) move(delta int) {
-	if len(m.filtered) == 0 {
+	if len(m.rows) == 0 {
 		return
 	}
 	m.cursor += delta
@@ -348,7 +690,8 @@ func (m *Model) move(delta int) {
 }
 
 func (m *Model) clamp() {
-	if len(m.filtered) == 0 {
+	length := len(m.rows)
+	if length == 0 {
 		m.cursor = 0
 		m.offset = 0
 		return
@@ -356,8 +699,8 @@ func (m *Model) clamp() {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
-	if m.cursor >= len(m.filtered) {
-		m.cursor = len(m.filtered) - 1
+	if m.cursor >= length {
+		m.cursor = length - 1
 	}
 	height := m.listHeight()
 	if m.cursor < m.offset {
@@ -372,21 +715,129 @@ func (m *Model) clamp() {
 }
 
 func (m Model) selection(action Action) Result {
-	if len(m.filtered) == 0 {
+	selected, ok := m.selectedRow()
+	if !ok || selected.Kind != rowSession {
 		return Result{}
 	}
-	return Result{Action: action, Session: m.filtered[m.cursor]}
+	return Result{Action: action, Session: selected.Session}
+}
+
+func (m *Model) enterSelection() (Result, bool) {
+	selected, ok := m.selectedRow()
+	if !ok {
+		return Result{}, false
+	}
+	switch selected.Kind {
+	case rowNewChat:
+		return Result{Action: ActionNew, Chat: true}, false
+	case rowSession:
+		return Result{Action: ActionResume, Session: selected.Session}, false
+	case rowProject:
+		if selected.Chat {
+			return Result{Action: ActionNew, Chat: true}, false
+		}
+		return Result{Action: ActionNew, Dir: selected.Dir}, false
+	case rowGroup:
+		m.collapsed[selected.ID] = !m.collapsed[selected.ID]
+		m.refreshRowsKeepingCursor(selected.ID)
+		return Result{}, true
+	default:
+		return Result{}, false
+	}
+}
+
+func (m Model) newSelection() Result {
+	selected, ok := m.selectedRow()
+	if !ok {
+		return Result{Action: ActionNew, Chat: true}
+	}
+	switch selected.Kind {
+	case rowSession:
+		if selected.Session.CWD != "" && selected.Session.Project != "chats" {
+			return Result{Action: ActionNew, Dir: selected.Session.CWD}
+		}
+	case rowProject, rowGroup:
+		if selected.Chat {
+			return Result{Action: ActionNew, Chat: true}
+		}
+		if selected.Dir != "" {
+			return Result{Action: ActionNew, Dir: selected.Dir}
+		}
+	}
+	return Result{Action: ActionNew, Chat: true}
 }
 
 func (m Model) copySelection(target string) tea.Cmd {
-	if len(m.filtered) == 0 {
+	selected, ok := m.selectedRow()
+	if !ok || selected.Kind != rowSession {
 		return nil
 	}
-	session := m.filtered[m.cursor]
-	label, value := copyValue(session, target)
+	label, value := copyValue(selected.Session, target)
 	return func() tea.Msg {
 		return copyMsg{label: label, err: writeClipboard(value)}
 	}
+}
+
+func isChatSession(session sessions.Session) bool {
+	return session.Project == "chats"
+}
+
+func countMeta(count int, latest time.Time) string {
+	label := "thread"
+	if count != 1 {
+		label = "threads"
+	}
+	return fmt.Sprintf("%d %s · %s", count, label, shortTime(latest))
+}
+
+func sortRows(rows []row) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Latest.Equal(rows[j].Latest) {
+			return rows[i].Title < rows[j].Title
+		}
+		return rows[i].Latest.After(rows[j].Latest)
+	})
+}
+
+func chatDateKey(session sessions.Session) string {
+	parts := strings.Split(session.CWD, string(osPathSeparator()))
+	for i := 0; i+2 < len(parts); i++ {
+		if parts[i] == "Documents" && parts[i+1] == "Codex" && looksLikeDate(parts[i+2]) {
+			return parts[i+2]
+		}
+	}
+	if !session.UpdatedAt.IsZero() {
+		return session.UpdatedAt.Local().Format("2006-01-02")
+	}
+	return "unknown"
+}
+
+func chatDateTitle(key string) string {
+	if key == time.Now().Local().Format("2006-01-02") {
+		return "today"
+	}
+	return key
+}
+
+func looksLikeDate(value string) bool {
+	if len(value) != len("2006-01-02") {
+		return false
+	}
+	_, err := time.Parse("2006-01-02", value)
+	return err == nil
+}
+
+func osPathSeparator() rune {
+	return '/'
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func copyValue(session sessions.Session, target string) (string, string) {
@@ -398,12 +849,29 @@ func copyValue(session sessions.Session, target string) (string, string) {
 	case "title", "name":
 		return "title", session.Title
 	case "resume":
-		return "resume command", "codex resume " + session.ID
+		return "resume command", codexSessionCommand("resume", session)
 	case "fork":
-		return "fork command", "codex fork " + session.ID
+		return "fork command", codexSessionCommand("fork", session)
 	default:
 		return "id", session.ID
 	}
+}
+
+func codexSessionCommand(action string, session sessions.Session) string {
+	if session.CWD == "" {
+		return "codex " + action + " " + session.ID
+	}
+	return "codex --yolo -C " + shellQuote(session.CWD) + " " + action + " " + session.ID
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(value, " \t\n'\"\\$`!*?[]{}()&;<>|") {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func writeClipboard(value string) error {
@@ -436,7 +904,11 @@ func (m Model) header() string {
 		query = "type to search"
 	}
 	count := fmt.Sprintf("%d/%d", len(m.filtered), len(m.all))
-	text := "cx  " + query + "  " + count
+	mode := string(m.view)
+	if m.view == viewGrouped {
+		mode += ":" + string(m.group)
+	}
+	text := "cx  " + mode + "  " + query + "  " + count
 	return headerStyle.Render(truncate(text, paddedWidth(m.width)))
 }
 
@@ -444,7 +916,7 @@ func (m Model) footer() string {
 	if m.command {
 		return commandStyle.Render(truncate(":"+m.cmdText, paddedWidth(m.width)))
 	}
-	text := "enter resume  ^f fork  y copy  : cmd  ? help  ^j/^k move  tab preview  ^e detail  ^v view"
+	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :n chat  ^f fork  y copy  ? help"
 	if m.notice != "" {
 		text = m.notice + "  " + text
 	}
@@ -453,13 +925,12 @@ func (m Model) footer() string {
 
 func (m Model) renderList(width int) string {
 	height := m.listHeight()
-	end := min(len(m.filtered), m.offset+height)
+	end := min(len(m.rows), m.offset+height)
 	lines := make([]string, 0, height)
 
 	for i := m.offset; i < end; i++ {
-		session := m.filtered[i]
 		selected := i == m.cursor
-		lines = append(lines, m.renderRow(session, width, selected)...)
+		lines = append(lines, m.renderRow(m.rows[i], width, selected)...)
 	}
 	for len(lines) < height {
 		lines = append(lines, "")
@@ -467,28 +938,46 @@ func (m Model) renderList(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m Model) renderRow(session sessions.Session, width int, selected bool) []string {
+func (m Model) renderRow(row row, width int, selected bool) []string {
 	prefix := "  "
 	style := rowStyle
 	if selected {
 		prefix = "▌ "
 		style = selectedStyle
 	}
-
-	title := session.Title
-	if title == "" {
-		title = session.ID
+	if row.Kind == rowNewChat {
+		if selected {
+			style = selectedActionStyle
+		} else {
+			style = actionRowStyle
+		}
 	}
-	meta := compactMeta(session)
-	first := lineWithMeta(prefix, title, meta, width)
+	title := row.Title
+	if title == "" {
+		title = row.ID
+	}
+	if row.Kind == rowGroup {
+		if row.Expanded {
+			title = "▾ " + title
+		} else {
+			title = "▸ " + title
+		}
+	}
+	if row.Depth > 0 {
+		title = strings.Repeat("  ", row.Depth) + title
+	}
+	if row.Kind == rowNewChat {
+		title = actionTitleStyle.Render(title)
+	}
+	first := lineWithMeta(prefix, title, row.Meta, width)
 
-	if !m.comfy {
+	if !m.comfy || row.Kind != rowSession {
 		return []string{style.Width(width).Render(first)}
 	}
 
-	context := session.Preview
+	context := row.Session.Preview
 	if context == "" {
-		context = session.CWD
+		context = row.Session.CWD
 	}
 	second := "  " + previewStyle.Render(truncate(context, max(10, width-2)))
 	return []string{
@@ -498,11 +987,38 @@ func (m Model) renderRow(session sessions.Session, width int, selected bool) []s
 }
 
 func (m Model) renderSide(width, height int) string {
-	session := m.filtered[m.cursor]
-	if m.detail {
-		return m.renderDetail(session, width, height)
+	selected, ok := m.selectedRow()
+	if !ok {
+		return ""
 	}
-	return m.renderPreview(session, width, height)
+	if selected.Kind != rowSession {
+		return m.renderContextSide(selected, width, height)
+	}
+	if m.detail {
+		return m.renderDetail(selected.Session, width, height)
+	}
+	return m.renderPreview(selected.Session, width, height)
+}
+
+func (m Model) renderContextSide(row row, width, height int) string {
+	innerWidth := max(8, width-4)
+	lines := []string{sideTitleStyle.Render(row.Title), mutedStyle.Render(row.Meta), ""}
+	switch row.Kind {
+	case rowNewChat:
+		lines = append(lines, "creates a fresh chat folder for today", "then runs:", "", mutedStyle.Render("codex --yolo -C <created-dir>"))
+	case rowProject:
+		if row.Chat {
+			lines = append(lines, "press enter to start a fresh general chat")
+		} else {
+			lines = append(lines, "press enter to start Codex in:", "", row.Dir)
+		}
+	case rowGroup:
+		lines = append(lines, "press enter to expand or collapse")
+		if row.Dir != "" {
+			lines = append(lines, "", "ctrl+n starts Codex in:", "", row.Dir)
+		}
+	}
+	return sideBoxStyle.Width(width).Render(strings.Join(fitPanelLines(fitTextLines(lines, innerWidth), height), "\n"))
 }
 
 func (m Model) renderPreview(session sessions.Session, width, height int) string {
@@ -606,20 +1122,26 @@ func (m Model) overlay(base string) string {
 		"  plain typing always searches, including j and k",
 		"",
 		"actions",
-		"  enter          resume selected thread",
+		"  enter          resume selected thread or start selected new chat",
+		"  :new           start a fresh general chat",
+		"  ctrl+n         start fresh Codex in selected context",
 		"  ctrl+f         fork selected thread",
 		"  y              copy selected session id",
 		"  :copy path     copy rollout jsonl path",
 		"  :copy resume   copy codex resume command",
 		"",
 		"views",
+		"  ctrl+p         project launcher",
+		"  ctrl+g         grouped projects",
 		"  tab            preview side/popup",
 		"  ctrl+e         detail/explain side/popup",
 		"  ctrl+v         compact/comfy rows",
 		"",
 		"commands",
-		"  :resume  :fork  :copy [id|path|cwd|title|resume|fork]",
-		"  :view [compact|comfy]  :preview  :detail  :clear  :quit",
+		"  :new [name]  :resume  :fork  :copy [id|path|cwd|title|resume|fork]",
+		"  :view [all|chats|projects|grouped|compact|comfy]",
+		"  :group [projects|chats]  :open  :close  :open-all  :close-all",
+		"  :preview  :detail  :clear  :quit",
 		"",
 		"press ? or esc to close",
 	}
@@ -702,6 +1224,14 @@ func fitPanelLines(lines []string, height int) []string {
 	return fitted
 }
 
+func fitTextLines(lines []string, width int) []string {
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, truncate(line, width))
+	}
+	return out
+}
+
 func joinColumns(left, right, gap string) string {
 	leftLines := strings.Split(left, "\n")
 	rightLines := strings.Split(right, "\n")
@@ -772,18 +1302,21 @@ func fullTime(t time.Time) string {
 }
 
 var (
-	headerStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115")).Padding(0, 1)
-	footerStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Padding(0, 1)
-	commandStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236")).Padding(0, 1)
-	mutedStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	projectStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("109"))
-	previewStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
-	rowStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	selectedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236"))
-	emptyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Padding(1, 2)
-	sideBoxStyle   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1)
-	helpBoxStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("109")).Padding(1, 2)
-	helpTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115"))
-	sideTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115"))
-	roleStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Bold(true)
+	headerStyle         = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115")).Padding(0, 1)
+	footerStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Padding(0, 1)
+	commandStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236")).Padding(0, 1)
+	mutedStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	projectStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("109"))
+	previewStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	rowStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	selectedStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236"))
+	actionRowStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("115"))
+	selectedActionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("29"))
+	actionTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115"))
+	emptyStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Padding(1, 2)
+	sideBoxStyle        = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1)
+	helpBoxStyle        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("109")).Padding(1, 2)
+	helpTitleStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115"))
+	sideTitleStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("115"))
+	roleStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Bold(true)
 )

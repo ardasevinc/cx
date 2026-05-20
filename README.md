@@ -67,7 +67,10 @@ Keyboard:
 
 - type to search
 - arrows, `ctrl+j`/`ctrl+k`, mouse wheel, page keys, home/end to move
-- `enter` to run `codex resume <session-id>`
+- `enter` resumes a session, starts the selected new chat/project row, or toggles a group
+- `ctrl+n` starts a fresh Codex thread in the selected session/project context
+- `ctrl+p` opens the project launcher
+- `ctrl+g` opens grouped projects
 - `ctrl+f` to run `codex fork <session-id>`
 - `y` copies the selected session id
 - `:` opens command mode
@@ -83,10 +86,13 @@ kept on `ctrl+j` and `ctrl+k` so search stays immediate.
 Command mode:
 
 ```text
+:new [name]
 :resume
 :fork
 :copy id|path|cwd|title|resume|fork
-:view compact|comfy
+:view all|chats|projects|grouped|compact|comfy
+:group projects|chats
+:open | :close | :toggle | :open-all | :close-all
 :preview
 :detail
 :clear
