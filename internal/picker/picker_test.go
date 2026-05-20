@@ -156,9 +156,52 @@ func TestGroupedViewLeftRightCloseAndOpenProjectGroup(t *testing.T) {
 	}
 }
 
+func TestCommandModeAcceptsSpaces(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+
+	var updated tea.Model = model
+	for _, msg := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("v")},
+		{Type: tea.KeyRunes, Runes: []rune("i")},
+		{Type: tea.KeyRunes, Runes: []rune("e")},
+		{Type: tea.KeyRunes, Runes: []rune("w")},
+		{Type: tea.KeySpace},
+		{Type: tea.KeyRunes, Runes: []rune("a")},
+		{Type: tea.KeyRunes, Runes: []rune("l")},
+		{Type: tea.KeyRunes, Runes: []rune("l")},
+	} {
+		updated, _ = updated.(Model).updateCommand(msg)
+	}
+	next := updated.(Model)
+
+	if next.cmdText != "view all" {
+		t.Fatalf("expected command text with space, got %q", next.cmdText)
+	}
+}
+
+func TestCommandFooterStaysAtBottomInComfyMode(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+	model.comfy = true
+	model.command = true
+	model.cmdText = "view all"
+
+	lines := strings.Split(model.View(), "\n")
+
+	if len(lines) < 19 {
+		t.Fatalf("expected footer near terminal bottom, got %d lines: %q", len(lines), model.View())
+	}
+	if !strings.Contains(lines[len(lines)-1], ":view all") {
+		t.Fatalf("expected command footer on last line, got %q", lines[len(lines)-1])
+	}
+}
+
 func TestForkedSessionRowShowsMarker(t *testing.T) {
 	model := New([]sessions.Session{{ID: "fork", Title: "Production billing audit", ParentID: "parent"}})
-	row := model.renderRow(sessionRow(model.all[0], 0), 80, false)
+	row := model.renderRow(model.sessionRow(model.all[0], 0), 80, false)
 
 	if len(row) != 1 {
 		t.Fatalf("expected compact row, got %#v", row)
