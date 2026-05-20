@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -13,9 +14,10 @@ import (
 	"github.com/ardasevinc/cx/internal/launcher"
 	"github.com/ardasevinc/cx/internal/picker"
 	"github.com/ardasevinc/cx/internal/sessions"
+	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "0.0.0-dev"
+const version = "v0.1.1"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)
@@ -24,6 +26,12 @@ func main() {
 func run(args []string, stdout io.Writer, stderr io.Writer) {
 	if len(args) > 0 && args[0] == "new" {
 		if err := runNew(args[1:], stdout, stderr); err != nil {
+			die(err)
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "update" {
+		if err := runUpdate(args[1:], stdout, stderr); err != nil {
 			die(err)
 		}
 		return
@@ -106,6 +114,7 @@ Usage:
   cx list [--limit N]
   cx new [name]
   cx new --cwd DIR
+  cx update [--check]
   cx version | cx --version | cx -V
 
 Flags:
@@ -204,6 +213,58 @@ Flags:
 		return nil
 	}
 	return runCodexFresh(dir)
+}
+
+func runUpdate(args []string, stdout io.Writer, stderr io.Writer) error {
+	flags := flag.NewFlagSet("cx update", flag.ExitOnError)
+	flags.SetOutput(stderr)
+	checkOnly := flags.Bool("check", false, "check the latest tagged cx version without installing")
+	flags.Usage = func() {
+		_, _ = fmt.Fprintln(stderr, `cx update - check or install the latest tagged cx release
+
+Usage:
+  cx update
+  cx update --check
+
+Behavior:
+  cx update --check compares this binary against the latest GitHub tag.
+  cx update installs the latest GitHub tag with:
+
+    go install github.com/ardasevinc/cx/cmd/cx@<latest-tag>
+
+Flags:
+  --check      Check for updates without installing.
+  --help       Show this help.`)
+	}
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() > 0 {
+		return fmt.Errorf("cx update does not accept positional arguments")
+	}
+
+	ctx := context.Background()
+	check, err := updater.CheckLatest(ctx, version)
+	if err != nil {
+		return err
+	}
+	printUpdateCheck(stdout, check)
+	if *checkOnly || check.Status == updater.Current || check.Status == updater.Ahead {
+		return nil
+	}
+
+	_, _ = fmt.Fprintf(stdout, "installing %s...\n", check.Latest)
+	if err := updater.Install(ctx, check.Latest, os.Stdout, os.Stderr); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(stdout, "installed cx %s\n", check.Latest)
+	return nil
+}
+
+func printUpdateCheck(out io.Writer, check updater.Check) {
+	_, _ = fmt.Fprintf(out, "current: %s\n", check.Current)
+	_, _ = fmt.Fprintf(out, "latest:  %s\n", check.Latest)
+	_, _ = fmt.Fprintf(out, "status:  %s\n", updater.StatusText(check.Status))
 }
 
 func printList(out io.Writer, items []sessions.Session, limit int) {

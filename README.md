@@ -44,6 +44,8 @@ cx list --limit 20
 cx new
 cx new "debug oauth staging"
 cx new --cwd ~/programming/open-source/cx
+cx update --check
+cx update
 cx version
 cx -V
 cx --no-alt-screen
@@ -62,6 +64,13 @@ If no name is provided, it creates the next `chat-001`, `chat-002`, ...
 directory. Named chats are slugged and collision-free, so an existing folder is
 never overwritten. `cx new --cwd DIR` starts a fresh Codex thread in an existing
 project directory with the same `--yolo -C` launch contract.
+
+`cx update --check` compares the current binary to the latest GitHub tag.
+`cx update` installs the latest tagged release with:
+
+```sh
+go install github.com/ardasevinc/cx/cmd/cx@<latest-tag>
+```
 
 Keyboard:
 
