@@ -132,6 +132,30 @@ func TestGroupedViewTogglesProjectGroup(t *testing.T) {
 	}
 }
 
+func TestGroupedViewLeftRightCloseAndOpenProjectGroup(t *testing.T) {
+	model := New([]sessions.Session{
+		{ID: "one", Title: "one", Project: "cx", CWD: "/home/alice/src/cx"},
+	})
+	model.width = 80
+	model.height = 20
+
+	updated, _ := model.executeCommand("group projects")
+	next := updated.(Model)
+	next.cursor = 1
+
+	updated, _ = next.updateKeys(tea.KeyMsg{Type: tea.KeyLeft})
+	next = updated.(Model)
+	if !strings.Contains(next.View(), "▸ cx") || strings.Contains(next.View(), "one") {
+		t.Fatalf("expected left arrow to close group, got %q", next.View())
+	}
+
+	updated, _ = next.updateKeys(tea.KeyMsg{Type: tea.KeyRight})
+	next = updated.(Model)
+	if !strings.Contains(next.View(), "▾ cx") || !strings.Contains(next.View(), "one") {
+		t.Fatalf("expected right arrow to open group, got %q", next.View())
+	}
+}
+
 func TestForkedSessionRowShowsMarker(t *testing.T) {
 	model := New([]sessions.Session{{ID: "fork", Title: "Production billing audit", ParentID: "parent"}})
 	row := model.renderRow(sessionRow(model.all[0], 0), 80, false)

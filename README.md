@@ -67,6 +67,7 @@ Keyboard:
 
 - type to search
 - arrows, `ctrl+j`/`ctrl+k`, mouse wheel, page keys, home/end to move
+- left/right close/open the selected group in grouped views
 - `enter` resumes a session, starts the selected new chat/project row, or toggles a group
 - `ctrl+n` starts a fresh Codex thread in the selected session/project context
 - `ctrl+p` opens the project launcher

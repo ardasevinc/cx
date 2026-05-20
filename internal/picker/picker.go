@@ -188,6 +188,10 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(-1)
 	case tea.KeyDown, tea.KeyCtrlJ:
 		m.move(1)
+	case tea.KeyLeft:
+		m.setSelectedGroupCollapsed(true)
+	case tea.KeyRight:
+		m.setSelectedGroupCollapsed(false)
 	case tea.KeyPgUp:
 		m.move(-m.listHeight())
 	case tea.KeyPgDown:
@@ -916,6 +920,13 @@ func (m Model) footer() string {
 	if m.command {
 		return commandStyle.Render(truncate(":"+m.cmdText, paddedWidth(m.width)))
 	}
+	if m.view == viewGrouped {
+		text := "enter toggle  ← close  → open  ^n new here  :open-all/:close-all  ^p projects  :n chat"
+		if m.notice != "" {
+			text = m.notice + "  " + text
+		}
+		return footerStyle.Render(truncate(text, paddedWidth(m.width)))
+	}
 	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :n chat  ^f fork  y copy  ? help"
 	if m.notice != "" {
 		text = m.notice + "  " + text
@@ -1120,6 +1131,7 @@ func (m Model) overlay(base string) string {
 		"navigation",
 		"  arrows, ctrl+j/ctrl+k, mouse wheel, pgup/pgdn, home/end",
 		"  plain typing always searches, including j and k",
+		"  grouped: left closes selected group, right opens selected group",
 		"",
 		"actions",
 		"  enter          resume selected thread or start selected new chat",

@@ -119,6 +119,7 @@ Flags:
 TUI keys:
   type                Search immediately. Printable j/k search too.
   arrows, ^j/^k       Move selection.
+  left/right          Close/open selected group in grouped views.
   mouse wheel         Move selection.
   pgup/pgdn home/end  Jump around the list.
   enter               Resume session, start selected new chat/project, or toggle group.
