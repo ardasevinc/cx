@@ -71,7 +71,7 @@ func (m *Model) loadSelectedPreviewCmd() tea.Cmd {
 	query := m.query
 	m.previewPending[sessionID] = true
 	return func() tea.Msg {
-		preview, err := indexer.LoadPreview(m.indexOptions, sessionID, query, 16)
+		preview, err := indexer.LoadPreview(m.indexOptions, sessionID, query, 2048)
 		return previewLoadedMsg{sessionID: sessionID, preview: preview, err: err}
 	}
 }
@@ -116,6 +116,7 @@ func (m *Model) applyPreviewLoaded(msg previewLoadedMsg) {
 		return
 	}
 	m.previewCache[msg.sessionID] = msg.preview
+	m.previewScroll = min(m.previewScroll, m.maxPreviewScroll())
 }
 
 func (m *Model) applyIndexRefresh(msg indexRefreshMsg) {

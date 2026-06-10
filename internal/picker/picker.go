@@ -90,6 +90,7 @@ type Model struct {
 	collapsed           map[string]bool
 	preview             bool
 	previewInitialized  bool
+	previewScroll       int
 	detail              bool
 	previewBeforeDetail bool
 	comfy               bool
@@ -195,8 +196,12 @@ func (m *Model) move(delta int) {
 	if len(m.rows) == 0 {
 		return
 	}
+	before := m.cursor
 	m.cursor += delta
 	m.clamp()
+	if m.cursor != before {
+		m.previewScroll = 0
+	}
 }
 
 func (m *Model) clamp() {
@@ -222,6 +227,42 @@ func (m *Model) clamp() {
 	if m.offset < 0 {
 		m.offset = 0
 	}
+}
+
+func (m *Model) scrollPreview(delta int) {
+	if !m.preview {
+		return
+	}
+	m.previewScroll += delta
+	m.previewScroll = min(max(0, m.previewScroll), m.maxPreviewScroll())
+}
+
+func (m Model) previewPageSize() int {
+	return max(1, m.bodyHeight()-4)
+}
+
+func (m Model) maxPreviewScroll() int {
+	selected, ok := m.selectedRow()
+	if !ok || selected.Kind != rowSession {
+		return 0
+	}
+	var width int
+	if m.preview && m.width >= sideBySideMinWidth {
+		listWidth := (m.width * 58) / 100
+		width = m.width - listWidth - 2
+	} else {
+		width = min(84, max(floatingMinWidth, m.width-6))
+	}
+	innerWidth := max(8, width-4)
+	maxLines := max(1, m.previewPanelHeight()-2)
+	return max(0, len(m.previewLines(selected.Session, innerWidth))-maxLines+1)
+}
+
+func (m Model) previewPanelHeight() int {
+	if m.preview && m.width >= sideBySideMinWidth {
+		return m.bodyHeight()
+	}
+	return m.floatingPanelHeight()
 }
 
 func (m Model) selection(action Action) Result {

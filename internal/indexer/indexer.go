@@ -274,7 +274,7 @@ func LoadPreview(opts Options, sessionID, query string, limit int) (Preview, err
 select role, text
 from chunks
 where session_id = ?
-order by ordinal desc
+order by ordinal
 limit ?`, sessionID, limit)
 	if err != nil {
 		return Preview{}, err
@@ -282,20 +282,18 @@ limit ?`, sessionID, limit)
 	defer func() {
 		_ = rows.Close()
 	}()
-	var reversed []sessions.Line
+	var lines []sessions.Line
 	for rows.Next() {
 		var line sessions.Line
 		if err := rows.Scan(&line.Role, &line.Text); err != nil {
 			return Preview{}, err
 		}
-		reversed = append(reversed, line)
+		lines = append(lines, line)
 	}
 	if err := rows.Err(); err != nil {
 		return Preview{}, err
 	}
-	for i := len(reversed) - 1; i >= 0; i-- {
-		preview.Lines = append(preview.Lines, reversed[i])
-	}
+	preview.Lines = lines
 	if strings.TrimSpace(query) != "" {
 		hits, err := searchLikeSession(db, sessionID, query, 6)
 		if err == nil && len(hits) > 0 {

@@ -48,6 +48,9 @@ func TestRebuildIndexesTranscriptSearchAndPreview(t *testing.T) {
 	if preview.Status != "indexed" || len(preview.Lines) != 2 {
 		t.Fatalf("unexpected preview: %#v", preview)
 	}
+	if preview.Lines[0].Role != "user" || !strings.Contains(preview.Lines[0].Text, "needle") {
+		t.Fatalf("expected chronological user line first, got %#v", preview.Lines)
+	}
 
 	refreshed, err := Refresh(Options{CodexHome: codexHome, CachePath: cachePath})
 	if err != nil {

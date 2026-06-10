@@ -57,6 +57,9 @@ func (m Model) footer() string {
 		return footerStyle.Render(truncate(text, paddedWidth(m.width)))
 	}
 	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :n chat  ^f fork  y copy  ? help"
+	if m.preview {
+		text = "shift+↑/↓ preview  ctrl+pgup/pgdn preview  " + text
+	}
 	if m.searchPending {
 		text = "transcript search pending  " + text
 	}
@@ -170,6 +173,11 @@ func (m Model) renderContextSide(row row, width, height int) string {
 
 func (m Model) renderPreview(session sessions.Session, width, height int) string {
 	innerWidth := max(8, width-4)
+	lines := m.previewLines(session, innerWidth)
+	return sideBoxStyle.Width(width).Render(strings.Join(fitScrollablePanelLines(lines, height, m.previewScroll), "\n"))
+}
+
+func (m Model) previewLines(session sessions.Session, innerWidth int) []string {
 	lines := []string{
 		sideTitleStyle.Render(truncate(session.Title, innerWidth)),
 		mutedStyle.Render(truncate(session.Project+"  "+shortTime(session.UpdatedAt), innerWidth)),
@@ -200,14 +208,14 @@ func (m Model) renderPreview(session sessions.Session, width, height int) string
 	}
 	if len(transcript) == 0 {
 		lines = append(lines, mutedStyle.Render("no transcript preview"))
-		return sideBoxStyle.Width(width).Render(strings.Join(fitPanelLines(lines, height), "\n"))
+		return lines
 	}
 	for _, line := range transcript {
 		role := roleStyle.Render(line.Role + ":")
 		lines = append(lines, wrap(role+" "+normalizePreviewText(line.Text), innerWidth)...)
 		lines = append(lines, "")
 	}
-	return sideBoxStyle.Width(width).Render(strings.Join(fitPanelLines(lines, height), "\n"))
+	return lines
 }
 
 func (m Model) renderDetail(session sessions.Session, width, height int) string {
@@ -313,6 +321,8 @@ func (m Model) overlay(base string) string {
 		"  ctrl+p         project launcher",
 		"  ctrl+g         grouped projects",
 		"  tab            preview side/popup",
+		"  shift+up/down  scroll preview",
+		"  ctrl+pgup/dn   page preview",
 		"  ctrl+e         detail/explain side/popup",
 		"  ctrl+v         compact/comfy rows",
 		"",
@@ -401,6 +411,19 @@ func fitPanelLines(lines []string, height int) []string {
 	fitted := append([]string{}, lines[:maxLines-1]...)
 	fitted = append(fitted, mutedStyle.Render("…"))
 	return fitted
+}
+
+func fitScrollablePanelLines(lines []string, height, offset int) []string {
+	maxLines := max(1, height-2)
+	if len(lines) <= maxLines {
+		return lines
+	}
+	maxOffset := max(0, len(lines)-maxLines+1)
+	offset = min(max(0, offset), maxOffset)
+	end := min(len(lines), offset+maxLines-1)
+	visible := append([]string{}, lines[offset:end]...)
+	visible = append(visible, mutedStyle.Render(fmt.Sprintf("scroll %d-%d/%d", offset+1, end, len(lines))))
+	return visible
 }
 
 func fitTextLines(lines []string, width int) []string {

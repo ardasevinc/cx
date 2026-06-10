@@ -67,6 +67,18 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlE:
 		m.toggleDetail()
 		return m, m.loadSelectedPreviewCmd()
+	case tea.KeyShiftUp:
+		m.scrollPreview(-1)
+	case tea.KeyShiftDown:
+		m.scrollPreview(1)
+	case tea.KeyCtrlPgUp:
+		m.scrollPreview(-m.previewPageSize())
+	case tea.KeyCtrlPgDown:
+		m.scrollPreview(m.previewPageSize())
+	case tea.KeyShiftHome:
+		m.previewScroll = 0
+	case tea.KeyShiftEnd:
+		m.previewScroll = m.maxPreviewScroll()
 	case tea.KeyCtrlV:
 		m.comfy = !m.comfy
 		m.clamp()
@@ -95,9 +107,11 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(m.listHeight())
 	case tea.KeyHome:
 		m.cursor = 0
+		m.previewScroll = 0
 		m.clamp()
 	case tea.KeyEnd:
 		m.cursor = len(m.rows) - 1
+		m.previewScroll = 0
 		m.clamp()
 	case tea.KeyBackspace, tea.KeyCtrlH:
 		if m.query != "" {

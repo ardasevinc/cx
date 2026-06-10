@@ -254,6 +254,32 @@ func TestNarrowPreviewRendersFloatingPanel(t *testing.T) {
 	}
 }
 
+func TestPreviewScrollsWithShiftDown(t *testing.T) {
+	session := sessions.Session{
+		ID:      "one",
+		Title:   "Scrollable transcript",
+		Project: "cx",
+	}
+	for i := 0; i < 30; i++ {
+		session.Transcript = append(session.Transcript, sessions.Line{Role: "user", Text: "line " + string(rune('a'+i%26))})
+	}
+	model := New([]sessions.Session{session})
+	model.width = 120
+	model.height = 10
+	model.preview = true
+	model.previewInitialized = true
+
+	updated, _ := model.updateKeys(tea.KeyMsg{Type: tea.KeyShiftDown})
+	next := updated.(Model)
+
+	if next.previewScroll != 1 {
+		t.Fatalf("expected preview scroll to move, got %d", next.previewScroll)
+	}
+	if view := next.View(); !strings.Contains(view, "scroll ") {
+		t.Fatalf("expected scroll indicator, got %q", view)
+	}
+}
+
 func TestFloatingPreviewDoesNotCoverSelectedRow(t *testing.T) {
 	items := []sessions.Session{
 		{ID: "one", Title: "one"},

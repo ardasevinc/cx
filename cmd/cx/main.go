@@ -19,7 +19,7 @@ import (
 	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "v0.1.5"
+const version = "v0.1.6"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)
@@ -156,6 +156,8 @@ TUI keys:
   :                   Command mode.
   ?                   Help overlay.
   tab                 Toggle preview panel.
+  shift+up/down       Scroll preview panel.
+  ctrl+pgup/pgdn      Page preview panel.
   ^e                  Toggle detail view.
   ^v                  Toggle compact/comfy rows.
   esc, ^c             Exit.
