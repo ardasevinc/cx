@@ -19,7 +19,7 @@ import (
 	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "v0.1.3"
+const version = "v0.1.4"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)
@@ -401,14 +401,59 @@ func printStatusText(out io.Writer, status indexer.Status) {
 	_, _ = fmt.Fprintf(out, "codex home:  %s\n", status.CodexHome)
 	_, _ = fmt.Fprintf(out, "state db:    %s\n", status.StateDBPath)
 	_, _ = fmt.Fprintf(out, "schema:      %d\n", status.SchemaVersion)
-	_, _ = fmt.Fprintf(out, "fts:         %t\n", status.FTSAvailable)
-	_, _ = fmt.Fprintf(out, "sessions:    %d indexed=%d pending=%d failed=%d missing=%d truncated=%d\n",
-		status.TotalSessions, status.IndexedSessions, status.PendingSessions, status.FailedSessions, status.MissingSessions, status.TruncatedSessions)
-	_, _ = fmt.Fprintf(out, "chunks:      %d\n", status.ChunkCount)
-	_, _ = fmt.Fprintf(out, "cache bytes: %d\n", status.CacheBytes)
+	_, _ = fmt.Fprintf(out, "fts:         %s\n", enabledText(status.FTSAvailable))
+	_, _ = fmt.Fprintf(out, "sessions:    %s total, %s indexed, %s pending, %s failed, %s missing, %s truncated\n",
+		formatCount(status.TotalSessions),
+		formatCount(status.IndexedSessions),
+		formatCount(status.PendingSessions),
+		formatCount(status.FailedSessions),
+		formatCount(status.MissingSessions),
+		formatCount(status.TruncatedSessions))
+	_, _ = fmt.Fprintf(out, "chunks:      %s\n", formatCount(status.ChunkCount))
+	_, _ = fmt.Fprintf(out, "cache size:  %s\n", formatBytes(status.CacheBytes))
 	if status.LatestIndexedAt != "" {
 		_, _ = fmt.Fprintf(out, "latest:      %s\n", status.LatestIndexedAt)
 	}
+}
+
+func enabledText(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
+}
+
+func formatCount(value int) string {
+	text := fmt.Sprint(value)
+	if len(text) <= 3 {
+		return text
+	}
+	var parts []string
+	for len(text) > 3 {
+		parts = append([]string{text[len(text)-3:]}, parts...)
+		text = text[:len(text)-3]
+	}
+	parts = append([]string{text}, parts...)
+	return strings.Join(parts, ",")
+}
+
+func formatBytes(value int64) string {
+	const unit = 1024
+	if value < unit {
+		if value == 1 {
+			return "1 byte"
+		}
+		return fmt.Sprintf("%d bytes", value)
+	}
+	units := []string{"KiB", "MiB", "GiB", "TiB"}
+	size := float64(value)
+	for _, suffix := range units {
+		size /= unit
+		if size < unit {
+			return fmt.Sprintf("%.1f %s", size, suffix)
+		}
+	}
+	return fmt.Sprintf("%.1f PiB", size/unit)
 }
 
 func writeJSON(out io.Writer, value any) error {
