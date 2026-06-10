@@ -21,8 +21,6 @@ Requirements:
 
 - Codex CLI available as `codex`.
 - Local Codex state under `~/.codex`.
-- `sqlite3` on `PATH` for the fast state-db path. `cx` falls back to JSONL scans
-  if unavailable.
 
 ## Privacy and compatibility
 
@@ -44,6 +42,10 @@ cx list --limit 20
 cx new
 cx new "debug oauth staging"
 cx new --cwd ~/programming/open-source/cx
+cx index status
+cx index refresh
+cx index rebuild
+cx doctor
 cx update --check
 cx update
 cx version
@@ -52,6 +54,16 @@ cx --no-alt-screen
 ```
 
 `cx --help` prints the full CLI, flag, key, and command reference.
+
+`cx index refresh` incrementally builds the local transcript cache at
+`~/.cache/cx/index.sqlite`. The cache is disposable; Codex's own
+`~/.codex/state_5.sqlite` and rollout JSONL files remain authoritative.
+Transcript search and richer previews use the cache when available and degrade
+to metadata-only behavior when it is empty or unavailable.
+
+`cx index status --json` and `cx doctor --json` expose cache health, FTS
+availability, missing/failed/truncated sessions, cache size, and storage-shape
+compatibility checks for automation.
 
 `cx new [name]` creates a fresh local chat directory under
 `~/Documents/Codex/YYYY-MM-DD/` using the local date, then launches:
