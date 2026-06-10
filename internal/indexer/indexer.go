@@ -135,7 +135,7 @@ func Rebuild(opts Options) (RebuildResult, error) {
 	if err != nil {
 		return RebuildResult{}, err
 	}
-	items, err := sessions.Load(sessions.Options{CodexHome: paths.codexHome})
+	items, err := sessions.Load(sessions.Options{CodexHome: paths.codexHome, LoadForkParents: true})
 	if err != nil {
 		return RebuildResult{}, err
 	}
@@ -166,7 +166,7 @@ func Refresh(opts Options) (RebuildResult, error) {
 	if err != nil {
 		return RebuildResult{}, err
 	}
-	items, err := sessions.Load(sessions.Options{CodexHome: paths.codexHome})
+	items, err := sessions.Load(sessions.Options{CodexHome: paths.codexHome, LoadForkParents: true})
 	if err != nil {
 		return RebuildResult{}, err
 	}

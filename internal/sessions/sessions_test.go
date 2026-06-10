@@ -29,7 +29,7 @@ func TestLoadIndexesSessionsByUpdatedTime(t *testing.T) {
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"resume vpn thread"}]}}
 `)
 
-	sessions, err := Load(Options{CodexHome: codexHome})
+	sessions, err := Load(Options{CodexHome: codexHome, LoadForkParents: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ insert into threads (id, rollout_path, created_at, updated_at, source, model_pro
 {"id":"named-thread","thread_name":"Production billing audit","updated_at":"2026-05-12T19:59:18Z"}
 `)
 
-	sessions, err := Load(Options{CodexHome: codexHome})
+	sessions, err := Load(Options{CodexHome: codexHome, LoadForkParents: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ values ('fork-thread', '` + forkPath + `', 1, 2, 'cli', 'openai', '/tmp/cx', 'st
 	writeRollout(t, filepath.Join(codexHome, "session_index.jsonl"), `{"id":"parent-thread","thread_name":"Production billing audit","updated_at":"2026-05-12T19:59:18Z"}
 `)
 
-	sessions, err := Load(Options{CodexHome: codexHome})
+	sessions, err := Load(Options{CodexHome: codexHome, LoadForkParents: true})
 	if err != nil {
 		t.Fatal(err)
 	}

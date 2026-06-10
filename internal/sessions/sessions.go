@@ -48,9 +48,10 @@ type Line struct {
 }
 
 type Options struct {
-	Home         string
-	CodexHome    string
-	PreviewLimit int
+	Home            string
+	CodexHome       string
+	PreviewLimit    int
+	LoadForkParents bool
 }
 
 func Load(opts Options) ([]Session, error) {
@@ -67,7 +68,7 @@ func Load(opts Options) ([]Session, error) {
 		codexHome = filepath.Join(home, ".codex")
 	}
 
-	if sessions, err := loadStateDB(codexHome); err == nil && len(sessions) > 0 {
+	if sessions, err := loadStateDB(codexHome, opts); err == nil && len(sessions) > 0 {
 		return sessions, nil
 	}
 	return loadJSONL(codexHome, opts)
@@ -134,7 +135,7 @@ type sessionIndexEntry struct {
 	ThreadName string `json:"thread_name"`
 }
 
-func loadStateDB(codexHome string) ([]Session, error) {
+func loadStateDB(codexHome string, opts Options) ([]Session, error) {
 	dbPath := filepath.Join(codexHome, "state_5.sqlite")
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil, err
@@ -205,7 +206,9 @@ order by updated_at_ms desc, id desc;
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	loadForkParents(sessions)
+	if opts.LoadForkParents {
+		loadForkParents(sessions)
+	}
 	applyThreadNames(sessions, threadNames)
 	return sessions, nil
 }
