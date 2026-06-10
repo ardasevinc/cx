@@ -55,8 +55,8 @@ const (
 type projectChildSortMode string
 
 const (
-	projectChildSortDefault projectChildSortMode = "default"
-	projectChildSortDate    projectChildSortMode = "date"
+	projectChildSortDate   projectChildSortMode = "date"
+	projectChildSortSource projectChildSortMode = "source"
 )
 
 type rowKind int
@@ -136,7 +136,7 @@ func newModel(items []sessions.Session, opts indexer.Options, indexEnabled bool)
 		filtered:         items,
 		view:             viewAll,
 		group:            groupProjects,
-		projectChildSort: projectChildSortDefault,
+		projectChildSort: projectChildSortDate,
 		collapsed:        make(map[string]bool),
 		indexEnabled:     indexEnabled,
 		indexOptions:     opts,

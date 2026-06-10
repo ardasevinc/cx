@@ -234,7 +234,7 @@ func TestGroupedViewLeftRightCloseAndOpenProjectGroup(t *testing.T) {
 	}
 }
 
-func TestGroupedProjectSortDateOnlySortsChildren(t *testing.T) {
+func TestGroupedProjectsSortChildrenByDateByDefault(t *testing.T) {
 	older := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	newer := time.Date(2026, 1, 3, 10, 0, 0, 0, time.UTC)
 	model := New([]sessions.Session{
@@ -247,18 +247,12 @@ func TestGroupedProjectSortDateOnlySortsChildren(t *testing.T) {
 
 	updated, _ := model.executeCommand("group projects")
 	next := updated.(Model)
-	if got := rowTitleOrder(next.rows); strings.Join(got, ",") != "+ new chat,cx,old cx,newer cx,api,api" {
-		t.Fatalf("expected default child order to follow source order, got %#v", got)
-	}
-
-	updated, _ = next.executeCommand("sort date")
-	next = updated.(Model)
 	if got := rowTitleOrder(next.rows); strings.Join(got, ",") != "+ new chat,cx,newer cx,old cx,api,api" {
-		t.Fatalf("expected date sort inside cx only without moving groups, got %#v", got)
+		t.Fatalf("expected default date sort inside cx only without moving groups, got %#v", got)
 	}
 }
 
-func TestGroupedProjectSortDefaultRestoresSourceOrder(t *testing.T) {
+func TestGroupedProjectSortSourceRestoresSourceOrder(t *testing.T) {
 	older := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	newer := time.Date(2026, 1, 3, 10, 0, 0, 0, time.UTC)
 	model := New([]sessions.Session{
@@ -269,12 +263,11 @@ func TestGroupedProjectSortDefaultRestoresSourceOrder(t *testing.T) {
 	model.height = 20
 
 	updated, _ := model.executeCommand("group projects")
-	updated, _ = updated.(Model).executeCommand("sort date")
-	updated, _ = updated.(Model).executeCommand("sort default")
+	updated, _ = updated.(Model).executeCommand("sort source")
 	next := updated.(Model)
 
 	if got := rowTitleOrder(next.rows); strings.Join(got, ",") != "+ new chat,cx,old cx,newer cx" {
-		t.Fatalf("expected default sort to restore source child order, got %#v", got)
+		t.Fatalf("expected source sort to restore source child order, got %#v", got)
 	}
 }
 

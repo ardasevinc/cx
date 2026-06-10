@@ -53,7 +53,7 @@ func (m Model) footer() string {
 		return commandStyle.Render(truncate(":"+m.cmdText, paddedWidth(m.width)))
 	}
 	if m.view == viewGrouped {
-		text := "enter toggle  ← close  → open  ^n new here  :sort date/default  :open-all/:close-all  ^p projects"
+		text := "enter toggle  ← close  → open  ^n new here  :sort date/source  :open-all/:close-all  ^p projects"
 		if m.notice != "" {
 			text = m.notice + "  " + text
 		}
@@ -333,7 +333,7 @@ func (m Model) overlay(base string) string {
 		"  :new [name]  :resume  :fork  :copy [id|path|cwd|title|resume|fork]",
 		"  :view [all|chats|projects|grouped|compact|comfy]",
 		"  :group [projects|chats]  :open  :close  :open-all  :close-all",
-		"  :sort [date|default]  sort chats inside grouped projects only",
+		"  :sort [date|source]  sort chats inside grouped projects only",
 		"  :preview  :detail  :clear  :quit",
 		"",
 		"press ? or esc to close",

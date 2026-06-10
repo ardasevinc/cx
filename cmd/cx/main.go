@@ -19,7 +19,7 @@ import (
 	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "v0.1.8"
+const version = "v0.1.9"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)
@@ -169,7 +169,7 @@ Commands:
   :copy id|path|cwd|title|resume|fork
   :view all|chats|projects|grouped|compact|comfy
   :group projects|chats
-  :sort date|default
+  :sort date|source
   :open | :close | :toggle | :open-all | :close-all
   :preview
   :detail

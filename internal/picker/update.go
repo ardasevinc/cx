@@ -324,14 +324,14 @@ func (m *Model) setGroup(group string) {
 func (m *Model) setProjectChildSort(args []string) {
 	next := projectChildSortDate
 	if m.projectChildSort == projectChildSortDate {
-		next = projectChildSortDefault
+		next = projectChildSortSource
 	}
 	if len(args) > 0 {
 		switch strings.ToLower(args[0]) {
-		case "date", "updated", "updated-at", "latest":
+		case "date", "default", "updated", "updated-at", "latest":
 			next = projectChildSortDate
-		case "default", "source", "relevance", "query":
-			next = projectChildSortDefault
+		case "source", "relevance", "query":
+			next = projectChildSortSource
 		default:
 			m.notice = "unknown sort: " + strings.Join(args, " ")
 			return
@@ -342,6 +342,6 @@ func (m *Model) setProjectChildSort(args []string) {
 	if m.projectChildSort == projectChildSortDate {
 		m.notice = "project chats sorted by date"
 	} else {
-		m.notice = "project chats use default order"
+		m.notice = "project chats use source order"
 	}
 }
