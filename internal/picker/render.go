@@ -313,7 +313,7 @@ func (m Model) overlay(base string) string {
 		"  :new           start a fresh general chat",
 		"  ctrl+n         start fresh Codex in selected context",
 		"  ctrl+f         fork selected thread",
-		"  y              copy selected session id",
+		"  ctrl+y         copy selected session id",
 		"  :copy path     copy rollout jsonl path",
 		"  :copy resume   copy codex resume command",
 		"",

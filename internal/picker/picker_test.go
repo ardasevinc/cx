@@ -50,6 +50,64 @@ func TestSpaceSearchesInNormalMode(t *testing.T) {
 	}
 }
 
+func TestYSearchesWhenQueryAlreadyStarted(t *testing.T) {
+	model := New([]sessions.Session{
+		{ID: "one", Title: "my tasks", SearchText: "my tasks"},
+		{ID: "two", Title: "mx tasks", SearchText: "mx tasks"},
+	})
+	model.width = 80
+	model.height = 20
+	model.query = "m"
+	model.refreshRows()
+
+	updated, cmd := model.updateKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	next := updated.(Model)
+
+	if cmd != nil {
+		t.Fatalf("expected y to search, not copy")
+	}
+	if next.query != "my" {
+		t.Fatalf("expected y in query, got %q", next.query)
+	}
+	if len(next.filtered) != 1 || next.filtered[0].ID != "one" {
+		t.Fatalf("unexpected filtered sessions: %#v", next.filtered)
+	}
+}
+
+func TestYSearchesFromEmptyQuery(t *testing.T) {
+	model := New([]sessions.Session{
+		{ID: "one", Title: "yaml migration", SearchText: "yaml migration"},
+		{ID: "two", Title: "tasks", SearchText: "tasks"},
+	})
+	model.width = 80
+	model.height = 20
+
+	updated, cmd := model.updateKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	next := updated.(Model)
+
+	if cmd != nil {
+		t.Fatalf("expected y to search, not copy")
+	}
+	if next.query != "y" {
+		t.Fatalf("expected y query, got %q", next.query)
+	}
+	if len(next.filtered) != 1 || next.filtered[0].ID != "one" {
+		t.Fatalf("unexpected filtered sessions: %#v", next.filtered)
+	}
+}
+
+func TestCtrlYCopiesSelection(t *testing.T) {
+	model := New([]sessions.Session{{ID: "one", Title: "one"}})
+	model.width = 80
+	model.height = 20
+
+	_, cmd := model.updateKeys(tea.KeyMsg{Type: tea.KeyCtrlY})
+
+	if cmd == nil {
+		t.Fatalf("expected ctrl+y to copy selected id")
+	}
+}
+
 func TestMouseWheelMovesSelection(t *testing.T) {
 	model := New([]sessions.Session{
 		{ID: "one", Title: "one"},

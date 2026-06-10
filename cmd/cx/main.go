@@ -19,7 +19,7 @@ import (
 	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "v0.1.6"
+const version = "v0.1.7"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)
@@ -152,7 +152,7 @@ TUI keys:
   ^p                  Show project launcher.
   ^g                  Show grouped projects.
   ^f                  Run codex --yolo -C <cwd> fork <session-id>.
-  y                   Copy selected session id.
+  ^y                  Copy selected session id.
   :                   Command mode.
   ?                   Help overlay.
   tab                 Toggle preview panel.

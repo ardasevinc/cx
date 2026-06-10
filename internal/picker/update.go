@@ -124,6 +124,8 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.query = ""
 		m.refreshRows()
 		return m, tea.Batch(m.queueTranscriptSearch(), m.loadSelectedPreviewCmd())
+	case tea.KeyCtrlY:
+		return m, m.copySelection("id")
 	case tea.KeySpace:
 		m.query += " "
 		m.refreshRows()
@@ -138,8 +140,6 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "?":
 			m.help = true
 			return m, nil
-		case "y":
-			return m, m.copySelection("id")
 		}
 		m.query += key
 		m.refreshRows()
