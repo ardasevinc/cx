@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ardasevinc/cx/internal/indexer"
 	"github.com/ardasevinc/cx/internal/sessions"
 )
 
@@ -344,5 +345,42 @@ func TestWideLaunchDefaultsToPreview(t *testing.T) {
 
 	if !strings.Contains(view, "no transcript preview") {
 		t.Fatalf("expected wide launch to show preview by default, got %q", view)
+	}
+}
+
+func TestTranscriptSearchMessageAddsTranscriptOnlyRows(t *testing.T) {
+	model := NewWithIndex([]sessions.Session{
+		{ID: "one", Title: "metadata", SearchText: "metadata"},
+		{ID: "two", Title: "other", SearchText: "other"},
+	}, indexer.Options{})
+	model.query = "needle"
+	model.searchSeq = 2
+	model.refreshRows()
+
+	model.applyTranscriptSearch(transcriptSearchMsg{
+		seq:   2,
+		query: "needle",
+		results: []indexer.SearchResult{{
+			SessionID: "two",
+			Role:      "user",
+			Snippet:   "needle only in transcript",
+		}},
+	})
+
+	if len(model.filtered) != 1 || model.filtered[0].ID != "two" {
+		t.Fatalf("expected transcript-only match, got %#v", model.filtered)
+	}
+	if snippet := model.hitSnippet("two"); !strings.Contains(snippet, "needle only") {
+		t.Fatalf("expected hit snippet, got %q", snippet)
+	}
+}
+
+func TestNormalizePreviewTextUnwrapsMarkdownTableFence(t *testing.T) {
+	text := "```markdown\n| A | B |\n| --- | --- |\n| 1 | 2 |\n```"
+
+	got := normalizePreviewText(text)
+
+	if strings.Contains(got, "```") || !strings.Contains(got, "| A | B |") {
+		t.Fatalf("unexpected normalized table: %q", got)
 	}
 }

@@ -28,6 +28,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.notice = "copied " + msg.label
 		}
+	case transcriptSearchMsg:
+		m.applyTranscriptSearch(msg)
+		return m, m.loadSelectedPreviewCmd()
+	case previewLoadedMsg:
+		m.applyPreviewLoaded(msg)
+	case indexRefreshMsg:
+		m.applyIndexRefresh(msg)
 	}
 	return m, nil
 }
@@ -59,6 +66,7 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshRows()
 	case tea.KeyCtrlE:
 		m.toggleDetail()
+		return m, m.loadSelectedPreviewCmd()
 	case tea.KeyCtrlV:
 		m.comfy = !m.comfy
 		m.clamp()
@@ -68,12 +76,15 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.preview {
 			m.detail = false
 		}
+		return m, m.loadSelectedPreviewCmd()
 	case tea.KeyCtrlL:
 		m.notice = ""
 	case tea.KeyUp, tea.KeyCtrlK:
 		m.move(-1)
+		return m, m.loadSelectedPreviewCmd()
 	case tea.KeyDown, tea.KeyCtrlJ:
 		m.move(1)
+		return m, m.loadSelectedPreviewCmd()
 	case tea.KeyLeft:
 		m.setSelectedGroupCollapsed(true)
 	case tea.KeyRight:
@@ -93,10 +104,12 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			runes := []rune(m.query)
 			m.query = string(runes[:len(runes)-1])
 			m.refreshRows()
+			return m, tea.Batch(m.queueTranscriptSearch(), m.loadSelectedPreviewCmd())
 		}
 	case tea.KeyCtrlU:
 		m.query = ""
 		m.refreshRows()
+		return m, tea.Batch(m.queueTranscriptSearch(), m.loadSelectedPreviewCmd())
 	case tea.KeyRunes:
 		key := msg.String()
 		switch key {
@@ -112,6 +125,7 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.query += key
 		m.refreshRows()
+		return m, tea.Batch(m.queueTranscriptSearch(), m.loadSelectedPreviewCmd())
 	}
 	return m, nil
 }
@@ -228,11 +242,12 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 	case "clear":
 		m.query = ""
 		m.refreshRows()
+		return m, tea.Batch(m.queueTranscriptSearch(), m.loadSelectedPreviewCmd())
 	default:
 		m.notice = "unknown command: " + input
 	}
 	m.clamp()
-	return m, nil
+	return m, m.loadSelectedPreviewCmd()
 }
 
 func (m *Model) toggleDetail() {

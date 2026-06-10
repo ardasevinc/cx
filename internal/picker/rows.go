@@ -55,7 +55,7 @@ func (m *Model) setAllGroupsCollapsed(collapsed bool) {
 }
 
 func (m *Model) refreshRowsKeepingCursor(id string) {
-	m.filtered = sessions.Filter(m.all, m.query)
+	m.filtered = m.filteredSessions()
 	m.rows = m.buildRows()
 	for i, row := range m.rows {
 		if row.ID == id {
@@ -72,13 +72,34 @@ func (m *Model) refreshRowsKeepingCursor(id string) {
 }
 
 func (m *Model) refreshRows() {
-	m.filtered = sessions.Filter(m.all, m.query)
+	m.filtered = m.filteredSessions()
 	m.rows = m.buildRows()
 	m.cursor = m.firstSessionCursor()
 	m.offset = 0
 	if m.height > 0 {
 		m.clamp()
 	}
+}
+
+func (m Model) filteredSessions() []sessions.Session {
+	filtered := sessions.Filter(m.all, m.query)
+	if strings.TrimSpace(m.query) == "" || len(m.transcriptHits) == 0 {
+		return filtered
+	}
+	seen := make(map[string]bool, len(filtered))
+	for _, session := range filtered {
+		seen[session.ID] = true
+	}
+	for _, session := range m.all {
+		if seen[session.ID] {
+			continue
+		}
+		if _, ok := m.transcriptHits[session.ID]; ok {
+			filtered = append(filtered, session)
+			seen[session.ID] = true
+		}
+	}
+	return filtered
 }
 
 func (m Model) buildRows() []row {
@@ -118,11 +139,15 @@ func (m Model) buildRows() []row {
 
 func (m Model) sessionRow(session sessions.Session, depth int) row {
 	root := m.rootFor(session)
+	meta := compactMeta(session, root)
+	if snippet := m.hitSnippet(session.ID); snippet != "" {
+		meta = "hit · " + meta
+	}
 	return row{
 		Kind:    rowSession,
 		ID:      "session:" + session.ID,
 		Title:   session.Title,
-		Meta:    compactMeta(session, root),
+		Meta:    meta,
 		Depth:   depth,
 		Dir:     root.Dir,
 		Chat:    root.Kind == projects.KindChat,

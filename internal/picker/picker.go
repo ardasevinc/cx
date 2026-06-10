@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ardasevinc/cx/internal/indexer"
 	"github.com/ardasevinc/cx/internal/projects"
 	"github.com/ardasevinc/cx/internal/sessions"
 )
@@ -97,6 +98,13 @@ type Model struct {
 	cmdText             string
 	notice              string
 	result              Result
+	indexEnabled        bool
+	indexOptions        indexer.Options
+	searchSeq           int
+	searchPending       bool
+	transcriptHits      map[string][]indexer.SearchResult
+	previewCache        map[string]indexer.Preview
+	previewPending      map[string]bool
 }
 
 type copyMsg struct {
@@ -105,20 +113,36 @@ type copyMsg struct {
 }
 
 func New(items []sessions.Session) Model {
+	return newModel(items, indexer.Options{}, false)
+}
+
+func NewWithIndex(items []sessions.Session, opts indexer.Options) Model {
+	return newModel(items, opts, true)
+}
+
+func newModel(items []sessions.Session, opts indexer.Options, indexEnabled bool) Model {
 	model := Model{
-		all:       items,
-		roots:     projects.ClassifySessions(items, projects.Options{}),
-		filtered:  items,
-		view:      viewAll,
-		group:     groupProjects,
-		collapsed: make(map[string]bool),
+		all:            items,
+		roots:          projects.ClassifySessions(items, projects.Options{}),
+		filtered:       items,
+		view:           viewAll,
+		group:          groupProjects,
+		collapsed:      make(map[string]bool),
+		indexEnabled:   indexEnabled,
+		indexOptions:   opts,
+		transcriptHits: make(map[string][]indexer.SearchResult),
+		previewCache:   make(map[string]indexer.Preview),
+		previewPending: make(map[string]bool),
 	}
 	model.refreshRows()
 	return model
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	if !m.indexEnabled {
+		return nil
+	}
+	return tea.Batch(m.refreshIndexCmd(), m.loadSelectedPreviewCmd())
 }
 
 func (m Model) View() string {

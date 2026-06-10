@@ -57,6 +57,9 @@ func (m Model) footer() string {
 		return footerStyle.Render(truncate(text, paddedWidth(m.width)))
 	}
 	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :n chat  ^f fork  y copy  ? help"
+	if m.searchPending {
+		text = "transcript search pending  " + text
+	}
 	if m.notice != "" {
 		text = m.notice + "  " + text
 	}
@@ -173,13 +176,35 @@ func (m Model) renderPreview(session sessions.Session, width, height int) string
 		mutedStyle.Render(truncate(session.ID, innerWidth)),
 		"",
 	}
-	if len(session.Transcript) == 0 {
+	transcript := session.Transcript
+	if preview, ok := m.previewCache[session.ID]; ok {
+		transcript = preview.Lines
+		status := preview.Status
+		if preview.Truncated || status == "truncated" {
+			status = "truncated"
+		}
+		if status != "" && status != "indexed" {
+			lines = append(lines, mutedStyle.Render("index: "+status))
+			if preview.Error != "" {
+				lines = append(lines, mutedStyle.Render(truncate(preview.Error, innerWidth)))
+			}
+			lines = append(lines, "")
+		}
+	} else if m.indexEnabled {
+		lines = append(lines, mutedStyle.Render("loading cached transcript…"), "")
+	}
+	if snippet := m.hitSnippet(session.ID); snippet != "" {
+		lines = append(lines, roleStyle.Render("hit:"))
+		lines = append(lines, wrap(snippet, innerWidth)...)
+		lines = append(lines, "")
+	}
+	if len(transcript) == 0 {
 		lines = append(lines, mutedStyle.Render("no transcript preview"))
 		return sideBoxStyle.Width(width).Render(strings.Join(fitPanelLines(lines, height), "\n"))
 	}
-	for _, line := range session.Transcript {
+	for _, line := range transcript {
 		role := roleStyle.Render(line.Role + ":")
-		lines = append(lines, wrap(role+" "+line.Text, innerWidth)...)
+		lines = append(lines, wrap(role+" "+normalizePreviewText(line.Text), innerWidth)...)
 		lines = append(lines, "")
 	}
 	return sideBoxStyle.Width(width).Render(strings.Join(fitPanelLines(lines, height), "\n"))
@@ -197,6 +222,15 @@ func (m Model) renderDetail(session sessions.Session, width, height int) string 
 		"updated: " + fullTime(session.UpdatedAt),
 		"cwd: " + session.CWD,
 		"path: " + session.Path,
+	}
+	if preview, ok := m.previewCache[session.ID]; ok {
+		fields = append(fields, "index: "+preview.Status)
+		if preview.Truncated {
+			fields = append(fields, "index warning: truncated")
+		}
+		if preview.Error != "" {
+			fields = append(fields, "index error: "+preview.Error)
+		}
 	}
 	if session.ParentID != "" {
 		fields = append(fields[:2], append([]string{"forked from: " + session.ParentID}, fields[2:]...)...)
@@ -416,6 +450,44 @@ func wrap(text string, width int) []string {
 	}
 	lines = append(lines, truncate(current, width))
 	return lines
+}
+
+func normalizePreviewText(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = unwrapMarkdownTableFence(text)
+	return strings.TrimSpace(text)
+}
+
+func unwrapMarkdownTableFence(text string) string {
+	trimmed := strings.TrimSpace(text)
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) < 4 {
+		return text
+	}
+	open := strings.TrimSpace(lines[0])
+	close := strings.TrimSpace(lines[len(lines)-1])
+	if close != "```" {
+		return text
+	}
+	if open != "```md" && open != "```markdown" {
+		return text
+	}
+	body := strings.Join(lines[1:len(lines)-1], "\n")
+	if !looksLikeMarkdownTable(body) {
+		return text
+	}
+	return body
+}
+
+func looksLikeMarkdownTable(text string) bool {
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "|") && strings.Contains(line, "---") {
+			return true
+		}
+	}
+	return false
 }
 
 func truncate(text string, width int) string {

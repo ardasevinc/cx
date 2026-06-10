@@ -85,7 +85,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) {
 		return
 	}
 
-	model := picker.New(items)
+	model := picker.NewWithIndex(items, indexer.Options{CodexHome: *codexHome})
 	options := []tea.ProgramOption{tea.WithOutput(os.Stderr), tea.WithMouseCellMotion()}
 	if !*noAltScreen {
 		options = append(options, tea.WithAltScreen())
