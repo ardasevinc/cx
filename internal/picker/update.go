@@ -110,6 +110,10 @@ func (m Model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.query = ""
 		m.refreshRows()
 		return m, tea.Batch(m.queueTranscriptSearch(), m.loadSelectedPreviewCmd())
+	case tea.KeySpace:
+		m.query += " "
+		m.refreshRows()
+		return m, tea.Batch(m.queueTranscriptSearch(), m.loadSelectedPreviewCmd())
 	case tea.KeyRunes:
 		key := msg.String()
 		switch key {

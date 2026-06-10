@@ -32,6 +32,24 @@ func TestRunesSearchInsteadOfMoving(t *testing.T) {
 	}
 }
 
+func TestSpaceSearchesInNormalMode(t *testing.T) {
+	model := New([]sessions.Session{
+		{ID: "one", Title: "journal entry", SearchText: "journal entry"},
+		{ID: "two", Title: "journal", SearchText: "journal"},
+	})
+	model.width = 80
+	model.height = 20
+	model.query = "journal"
+	model.refreshRows()
+
+	updated, _ := model.updateKeys(tea.KeyMsg{Type: tea.KeySpace})
+	next := updated.(Model)
+
+	if next.query != "journal " {
+		t.Fatalf("expected trailing space in query, got %q", next.query)
+	}
+}
+
 func TestMouseWheelMovesSelection(t *testing.T) {
 	model := New([]sessions.Session{
 		{ID: "one", Title: "one"},
