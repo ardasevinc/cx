@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ardasevinc/cx/internal/indexer"
 	"github.com/ardasevinc/cx/internal/launcher"
 	"github.com/ardasevinc/cx/internal/picker"
 	"github.com/ardasevinc/cx/internal/sessions"
@@ -32,6 +34,18 @@ func run(args []string, stdout io.Writer, stderr io.Writer) {
 	}
 	if len(args) > 0 && args[0] == "update" {
 		if err := runUpdate(args[1:], stdout, stderr); err != nil {
+			die(err)
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "index" {
+		if err := runIndex(args[1:], stdout, stderr); err != nil {
+			die(err)
+		}
+		return
+	}
+	if len(args) > 0 && args[0] == "doctor" {
+		if err := runDoctor(args[1:], stdout, stderr); err != nil {
 			die(err)
 		}
 		return
@@ -114,6 +128,8 @@ Usage:
   cx list [--limit N]
   cx new [name]
   cx new --cwd DIR
+  cx index status|refresh|rebuild|vacuum
+  cx doctor
   cx update [--check]
   cx version | cx --version | cx -V
 
@@ -259,6 +275,146 @@ Flags:
 	}
 	_, _ = fmt.Fprintf(stdout, "installed cx %s\n", check.Latest)
 	return nil
+}
+
+func runIndex(args []string, stdout io.Writer, stderr io.Writer) error {
+	if len(args) == 0 {
+		args = []string{"status"}
+	}
+	command := args[0]
+	flags := flag.NewFlagSet("cx index "+command, flag.ExitOnError)
+	flags.SetOutput(stderr)
+	codexHome := flags.String("codex-home", "", "override Codex home directory")
+	cachePath := flags.String("cache", "", "override cx index cache path")
+	jsonOutput := flags.Bool("json", false, "print machine-readable JSON")
+	flags.Usage = func() {
+		_, _ = fmt.Fprintln(stderr, `cx index - inspect and maintain the local transcript cache
+
+Usage:
+  cx index status [--json]
+  cx index refresh [--json]
+  cx index rebuild [--json]
+  cx index vacuum
+
+Flags:
+  --codex-home DIR    Read Codex state from DIR instead of ~/.codex.
+  --cache PATH        Use a custom cx index cache path.
+  --json              Print machine-readable JSON.
+  --help              Show this help.`)
+	}
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	opts := indexer.Options{CodexHome: *codexHome, CachePath: *cachePath}
+	switch command {
+	case "status":
+		status, err := indexer.CurrentStatus(opts)
+		if err != nil {
+			return err
+		}
+		return printIndexStatus(stdout, status, *jsonOutput)
+	case "rebuild":
+		result, err := indexer.Rebuild(opts)
+		if err != nil {
+			return err
+		}
+		if *jsonOutput {
+			return writeJSON(stdout, result)
+		}
+		printStatusText(stdout, result.Status)
+		_, _ = fmt.Fprintf(stdout, "elapsed: %s\n", result.Elapsed.Round(10_000_000))
+		_, _ = fmt.Fprintf(stdout, "indexed: %d skipped=%d\n", result.IndexedCount, result.SkippedCount)
+		return nil
+	case "refresh":
+		result, err := indexer.Refresh(opts)
+		if err != nil {
+			return err
+		}
+		if *jsonOutput {
+			return writeJSON(stdout, result)
+		}
+		printStatusText(stdout, result.Status)
+		_, _ = fmt.Fprintf(stdout, "elapsed: %s\n", result.Elapsed.Round(10_000_000))
+		_, _ = fmt.Fprintf(stdout, "indexed: %d skipped=%d\n", result.IndexedCount, result.SkippedCount)
+		return nil
+	case "vacuum":
+		if err := indexer.Vacuum(opts); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintln(stdout, "vacuumed cx index cache")
+		return nil
+	default:
+		return fmt.Errorf("unknown index command: %s", command)
+	}
+}
+
+func runDoctor(args []string, stdout io.Writer, stderr io.Writer) error {
+	flags := flag.NewFlagSet("cx doctor", flag.ExitOnError)
+	flags.SetOutput(stderr)
+	codexHome := flags.String("codex-home", "", "override Codex home directory")
+	cachePath := flags.String("cache", "", "override cx index cache path")
+	jsonOutput := flags.Bool("json", false, "print machine-readable JSON")
+	flags.Usage = func() {
+		_, _ = fmt.Fprintln(stderr, `cx doctor - check local cx/Codex storage compatibility
+
+Usage:
+  cx doctor [--json]
+
+Flags:
+  --codex-home DIR    Read Codex state from DIR instead of ~/.codex.
+  --cache PATH        Use a custom cx index cache path.
+  --json              Print machine-readable JSON.
+  --help              Show this help.`)
+	}
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	status, err := indexer.Doctor(indexer.Options{CodexHome: *codexHome, CachePath: *cachePath})
+	if err != nil {
+		return err
+	}
+	if *jsonOutput {
+		return writeJSON(stdout, status)
+	}
+	printStatusText(stdout, status)
+	if len(status.Problems) == 0 {
+		_, _ = fmt.Fprintln(stdout, "doctor: ok")
+		return nil
+	}
+	_, _ = fmt.Fprintln(stdout, "doctor: problems")
+	for _, problem := range status.Problems {
+		_, _ = fmt.Fprintf(stdout, "- %s\n", problem)
+	}
+	return nil
+}
+
+func printIndexStatus(out io.Writer, status indexer.Status, jsonOutput bool) error {
+	if jsonOutput {
+		return writeJSON(out, status)
+	}
+	printStatusText(out, status)
+	return nil
+}
+
+func printStatusText(out io.Writer, status indexer.Status) {
+	_, _ = fmt.Fprintf(out, "cache:       %s\n", status.CachePath)
+	_, _ = fmt.Fprintf(out, "codex home:  %s\n", status.CodexHome)
+	_, _ = fmt.Fprintf(out, "state db:    %s\n", status.StateDBPath)
+	_, _ = fmt.Fprintf(out, "schema:      %d\n", status.SchemaVersion)
+	_, _ = fmt.Fprintf(out, "fts:         %t\n", status.FTSAvailable)
+	_, _ = fmt.Fprintf(out, "sessions:    %d indexed=%d pending=%d failed=%d missing=%d truncated=%d\n",
+		status.TotalSessions, status.IndexedSessions, status.PendingSessions, status.FailedSessions, status.MissingSessions, status.TruncatedSessions)
+	_, _ = fmt.Fprintf(out, "chunks:      %d\n", status.ChunkCount)
+	_, _ = fmt.Fprintf(out, "cache bytes: %d\n", status.CacheBytes)
+	if status.LatestIndexedAt != "" {
+		_, _ = fmt.Fprintf(out, "latest:      %s\n", status.LatestIndexedAt)
+	}
+}
+
+func writeJSON(out io.Writer, value any) error {
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(value)
 }
 
 func printUpdateCheck(out io.Writer, check updater.Check) {
