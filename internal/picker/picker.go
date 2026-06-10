@@ -52,6 +52,13 @@ const (
 	groupChats    groupMode = "chats"
 )
 
+type projectChildSortMode string
+
+const (
+	projectChildSortDefault projectChildSortMode = "default"
+	projectChildSortDate    projectChildSortMode = "date"
+)
+
 type rowKind int
 
 const (
@@ -87,6 +94,7 @@ type Model struct {
 	height              int
 	view                viewMode
 	group               groupMode
+	projectChildSort    projectChildSortMode
 	collapsed           map[string]bool
 	preview             bool
 	previewInitialized  bool
@@ -123,17 +131,18 @@ func NewWithIndex(items []sessions.Session, opts indexer.Options) Model {
 
 func newModel(items []sessions.Session, opts indexer.Options, indexEnabled bool) Model {
 	model := Model{
-		all:            items,
-		roots:          projects.ClassifySessions(items, projects.Options{}),
-		filtered:       items,
-		view:           viewAll,
-		group:          groupProjects,
-		collapsed:      make(map[string]bool),
-		indexEnabled:   indexEnabled,
-		indexOptions:   opts,
-		transcriptHits: make(map[string][]indexer.SearchResult),
-		previewCache:   make(map[string]indexer.Preview),
-		previewPending: make(map[string]bool),
+		all:              items,
+		roots:            projects.ClassifySessions(items, projects.Options{}),
+		filtered:         items,
+		view:             viewAll,
+		group:            groupProjects,
+		projectChildSort: projectChildSortDefault,
+		collapsed:        make(map[string]bool),
+		indexEnabled:     indexEnabled,
+		indexOptions:     opts,
+		transcriptHits:   make(map[string][]indexer.SearchResult),
+		previewCache:     make(map[string]indexer.Preview),
+		previewPending:   make(map[string]bool),
 	}
 	model.refreshRows()
 	return model

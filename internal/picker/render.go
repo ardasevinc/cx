@@ -40,6 +40,9 @@ func (m Model) header() string {
 	mode := string(m.view)
 	if m.view == viewGrouped {
 		mode += ":" + string(m.group)
+		if m.group == groupProjects && m.projectChildSort == projectChildSortDate {
+			mode += ":date"
+		}
 	}
 	text := "cx  " + mode + "  " + query + "  " + count
 	return headerStyle.Render(truncate(text, paddedWidth(m.width)))
@@ -50,13 +53,13 @@ func (m Model) footer() string {
 		return commandStyle.Render(truncate(":"+m.cmdText, paddedWidth(m.width)))
 	}
 	if m.view == viewGrouped {
-		text := "enter toggle  ← close  → open  ^n new here  :open-all/:close-all  ^p projects  :n chat"
+		text := "enter toggle  ← close  → open  ^n new here  :sort date/default  :open-all/:close-all  ^p projects"
 		if m.notice != "" {
 			text = m.notice + "  " + text
 		}
 		return footerStyle.Render(truncate(text, paddedWidth(m.width)))
 	}
-	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :n chat  ^f fork  y copy  ? help"
+	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :n chat  ^f fork  ^y copy  ? help"
 	if m.preview {
 		text = "shift+↑/↓ preview  ctrl+pgup/pgdn preview  " + text
 	}
@@ -330,6 +333,7 @@ func (m Model) overlay(base string) string {
 		"  :new [name]  :resume  :fork  :copy [id|path|cwd|title|resume|fork]",
 		"  :view [all|chats|projects|grouped|compact|comfy]",
 		"  :group [projects|chats]  :open  :close  :open-all  :close-all",
+		"  :sort [date|default]  sort chats inside grouped projects only",
 		"  :preview  :detail  :clear  :quit",
 		"",
 		"press ? or esc to close",

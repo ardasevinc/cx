@@ -224,6 +224,7 @@ func (m Model) groupedProjectRows() []row {
 		if collapsed {
 			continue
 		}
+		children := make([]row, 0, group.Count)
 		for _, session := range m.filtered {
 			root := m.rootFor(session)
 			if group.Chat != (root.Kind == projects.KindChat) {
@@ -232,8 +233,12 @@ func (m Model) groupedProjectRows() []row {
 			if !group.Chat && root.Key != strings.TrimPrefix(group.ID, "group:project:") {
 				continue
 			}
-			rows = append(rows, m.sessionRow(session, 1))
+			children = append(children, m.sessionRow(session, 1))
 		}
+		if m.projectChildSort == projectChildSortDate {
+			sortRows(children)
+		}
+		rows = append(rows, children...)
 	}
 	return rows
 }

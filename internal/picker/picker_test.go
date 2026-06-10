@@ -3,6 +3,7 @@ package picker
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -231,6 +232,58 @@ func TestGroupedViewLeftRightCloseAndOpenProjectGroup(t *testing.T) {
 	if !strings.Contains(next.View(), "▾ cx") || !strings.Contains(next.View(), "one") {
 		t.Fatalf("expected right arrow to open group, got %q", next.View())
 	}
+}
+
+func TestGroupedProjectSortDateOnlySortsChildren(t *testing.T) {
+	older := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 1, 3, 10, 0, 0, 0, time.UTC)
+	model := New([]sessions.Session{
+		{ID: "old-cx", Title: "old cx", Project: "cx", CWD: "/home/alice/src/cx", UpdatedAt: older},
+		{ID: "newer-cx", Title: "newer cx", Project: "cx", CWD: "/home/alice/src/cx", UpdatedAt: newer},
+		{ID: "api", Title: "api", Project: "api", CWD: "/home/alice/src/api", UpdatedAt: older.Add(24 * time.Hour)},
+	})
+	model.width = 100
+	model.height = 20
+
+	updated, _ := model.executeCommand("group projects")
+	next := updated.(Model)
+	if got := rowTitleOrder(next.rows); strings.Join(got, ",") != "+ new chat,cx,old cx,newer cx,api,api" {
+		t.Fatalf("expected default child order to follow source order, got %#v", got)
+	}
+
+	updated, _ = next.executeCommand("sort date")
+	next = updated.(Model)
+	if got := rowTitleOrder(next.rows); strings.Join(got, ",") != "+ new chat,cx,newer cx,old cx,api,api" {
+		t.Fatalf("expected date sort inside cx only without moving groups, got %#v", got)
+	}
+}
+
+func TestGroupedProjectSortDefaultRestoresSourceOrder(t *testing.T) {
+	older := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 1, 3, 10, 0, 0, 0, time.UTC)
+	model := New([]sessions.Session{
+		{ID: "old-cx", Title: "old cx", Project: "cx", CWD: "/home/alice/src/cx", UpdatedAt: older},
+		{ID: "newer-cx", Title: "newer cx", Project: "cx", CWD: "/home/alice/src/cx", UpdatedAt: newer},
+	})
+	model.width = 100
+	model.height = 20
+
+	updated, _ := model.executeCommand("group projects")
+	updated, _ = updated.(Model).executeCommand("sort date")
+	updated, _ = updated.(Model).executeCommand("sort default")
+	next := updated.(Model)
+
+	if got := rowTitleOrder(next.rows); strings.Join(got, ",") != "+ new chat,cx,old cx,newer cx" {
+		t.Fatalf("expected default sort to restore source child order, got %#v", got)
+	}
+}
+
+func rowTitleOrder(rows []row) []string {
+	titles := make([]string, 0, len(rows))
+	for _, row := range rows {
+		titles = append(titles, row.Title)
+	}
+	return titles
 }
 
 func TestCommandModeAcceptsSpaces(t *testing.T) {

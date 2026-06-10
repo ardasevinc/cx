@@ -243,6 +243,8 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 			m.setGroup(strings.ToLower(fields[1]))
 		}
 		m.refreshRows()
+	case "s", "sort":
+		m.setProjectChildSort(fields[1:])
 	case "open":
 		m.setSelectedGroupCollapsed(false)
 	case "close":
@@ -316,5 +318,30 @@ func (m *Model) setGroup(group string) {
 		m.group = groupChats
 	case "projects", "project":
 		m.group = groupProjects
+	}
+}
+
+func (m *Model) setProjectChildSort(args []string) {
+	next := projectChildSortDate
+	if m.projectChildSort == projectChildSortDate {
+		next = projectChildSortDefault
+	}
+	if len(args) > 0 {
+		switch strings.ToLower(args[0]) {
+		case "date", "updated", "updated-at", "latest":
+			next = projectChildSortDate
+		case "default", "source", "relevance", "query":
+			next = projectChildSortDefault
+		default:
+			m.notice = "unknown sort: " + strings.Join(args, " ")
+			return
+		}
+	}
+	m.projectChildSort = next
+	m.refreshRows()
+	if m.projectChildSort == projectChildSortDate {
+		m.notice = "project chats sorted by date"
+	} else {
+		m.notice = "project chats use default order"
 	}
 }
