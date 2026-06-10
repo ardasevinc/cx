@@ -1,11 +1,13 @@
 package sessions
 
 import (
+	"database/sql"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestLoadIndexesSessionsByUpdatedTime(t *testing.T) {
@@ -79,10 +81,6 @@ func TestProjectNameSpecialCases(t *testing.T) {
 }
 
 func TestLoadUsesStateDBWhenAvailable(t *testing.T) {
-	if _, err := exec.LookPath("sqlite3"); err != nil {
-		t.Skip("sqlite3 not available")
-	}
-
 	root := t.TempDir()
 	codexHome := filepath.Join(root, ".codex")
 	if err := os.MkdirAll(codexHome, 0o755); err != nil {
@@ -124,10 +122,7 @@ create table threads (
 insert into threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, tokens_used, archived, created_at_ms, updated_at_ms, thread_source, preview)
 values ('db-thread', '/tmp/db-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/cx', 'DB title', '{}', 'never', 42, 0, 1000, 2000, 'user', 'DB preview');
 `
-	cmd := exec.Command("sqlite3", dbPath, sql)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("sqlite3 setup failed: %v\n%s", err, output)
-	}
+	execSQL(t, dbPath, sql)
 
 	sessions, err := Load(Options{CodexHome: codexHome})
 	if err != nil {
@@ -142,10 +137,6 @@ values ('db-thread', '/tmp/db-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/cx', '
 }
 
 func TestLoadUsesSessionIndexThreadNameWhenDBTitleIsFirstMessage(t *testing.T) {
-	if _, err := exec.LookPath("sqlite3"); err != nil {
-		t.Skip("sqlite3 not available")
-	}
-
 	root := t.TempDir()
 	codexHome := filepath.Join(root, ".codex")
 	if err := os.MkdirAll(codexHome, 0o755); err != nil {
@@ -187,10 +178,7 @@ create table threads (
 insert into threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, tokens_used, archived, created_at_ms, updated_at_ms, first_user_message, thread_source, preview)
 	values ('named-thread', '/tmp/named-thread.jsonl', 1, 2, 'cli', 'openai', '/tmp/cx', 'start the billing audit', '{}', 'never', 42, 0, 1000, 2000, 'start the billing audit', 'user', 'start the billing audit');
 `
-	cmd := exec.Command("sqlite3", dbPath, sql)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("sqlite3 setup failed: %v\n%s", err, output)
-	}
+	execSQL(t, dbPath, sql)
 	writeRollout(t, filepath.Join(codexHome, "session_index.jsonl"), `{"id":"named-thread","thread_name":"Investigate issue","updated_at":"2026-05-12T19:18:49Z"}
 {"id":"named-thread","thread_name":"Production billing audit","updated_at":"2026-05-12T19:59:18Z"}
 `)
@@ -211,10 +199,6 @@ insert into threads (id, rollout_path, created_at, updated_at, source, model_pro
 }
 
 func TestLoadInheritsParentThreadNameForFork(t *testing.T) {
-	if _, err := exec.LookPath("sqlite3"); err != nil {
-		t.Skip("sqlite3 not available")
-	}
-
 	root := t.TempDir()
 	codexHome := filepath.Join(root, ".codex")
 	sessionDir := filepath.Join(codexHome, "sessions", "2026", "05", "19")
@@ -261,10 +245,7 @@ create table threads (
 insert into threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, archived, created_at_ms, updated_at_ms, first_user_message, thread_source, preview)
 values ('fork-thread', '` + forkPath + `', 1, 2, 'cli', 'openai', '/tmp/cx', 'start the billing audit', '{}', 'never', 0, 1000, 2000, 'start the billing audit', 'user', 'start the billing audit');
 `
-	cmd := exec.Command("sqlite3", dbPath, sql)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("sqlite3 setup failed: %v\n%s", err, output)
-	}
+	execSQL(t, dbPath, sql)
 	writeRollout(t, filepath.Join(codexHome, "session_index.jsonl"), `{"id":"parent-thread","thread_name":"Production billing audit","updated_at":"2026-05-12T19:59:18Z"}
 `)
 
@@ -286,6 +267,20 @@ values ('fork-thread', '` + forkPath + `', 1, 2, 'cli', 'openai', '/tmp/cx', 'st
 func writeRollout(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func execSQL(t *testing.T, path string, statement string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = db.Close()
+	}()
+	if _, err := db.Exec(statement); err != nil {
 		t.Fatal(err)
 	}
 }

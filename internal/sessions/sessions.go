@@ -3,18 +3,20 @@ package sessions
 import (
 	"bufio"
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 	"unicode"
+
+	_ "modernc.org/sqlite"
 )
 
 const (
@@ -137,9 +139,6 @@ func loadStateDB(codexHome string) ([]Session, error) {
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil, err
 	}
-	if _, err := exec.LookPath("sqlite3"); err != nil {
-		return nil, err
-	}
 
 	query := `
 select
@@ -160,29 +159,85 @@ from threads
 where archived = 0
 order by updated_at_ms desc, id desc;
 `
-	cmd := exec.Command("sqlite3", "-json", dbPath, query)
-	output, err := cmd.Output()
+	db, err := openStateDB(dbPath)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		_ = db.Close()
+	}()
 
-	var rows []dbThread
-	if err := json.Unmarshal(output, &rows); err != nil {
+	rows, err := db.Query(query)
+	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	threadNames := loadThreadNames(codexHome)
-	sessions := make([]Session, 0, len(rows))
-	for _, row := range rows {
+	sessions := make([]Session, 0)
+	for rows.Next() {
+		var row dbThread
+		if err := rows.Scan(
+			&row.ID,
+			&row.RolloutPath,
+			&row.CreatedAtMS,
+			&row.UpdatedAtMS,
+			&row.Source,
+			&row.CWD,
+			&row.Title,
+			&row.FirstUserMessage,
+			&row.ThreadSource,
+			&row.Preview,
+			&row.TokensUsed,
+			&row.AgentNickname,
+			&row.AgentRole,
+		); err != nil {
+			return nil, err
+		}
 		session := sessionFromDB(row, threadNames[row.ID])
 		if session.ID == "" {
 			continue
 		}
 		sessions = append(sessions, session)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	loadForkParents(sessions)
 	applyThreadNames(sessions, threadNames)
 	return sessions, nil
+}
+
+func openStateDB(path string) (*sql.DB, error) {
+	immutableDSN := sqliteFileDSN(path, "mode=ro&immutable=1&_pragma=busy_timeout(250)")
+	db, err := sql.Open("sqlite", immutableDSN)
+	if err == nil {
+		if pingErr := db.Ping(); pingErr == nil {
+			return db, nil
+		}
+		_ = db.Close()
+	}
+
+	readOnlyDSN := sqliteFileDSN(path, "mode=ro&_pragma=busy_timeout(250)")
+	db, err = sql.Open("sqlite", readOnlyDSN)
+	if err != nil {
+		return nil, err
+	}
+	if pingErr := db.Ping(); pingErr != nil {
+		_ = db.Close()
+		return nil, pingErr
+	}
+	return db, nil
+}
+
+func sqliteFileDSN(path, rawQuery string) string {
+	cleaned := filepath.Clean(path)
+	if filepath.IsAbs(cleaned) {
+		return "file:" + filepath.ToSlash(cleaned) + "?" + rawQuery
+	}
+	return "file:" + filepath.ToSlash(cleaned) + "?" + rawQuery
 }
 
 func sessionFromDB(row dbThread, threadName string) Session {
