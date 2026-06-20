@@ -15,11 +15,12 @@ import (
 	"github.com/ardasevinc/cx/internal/indexer"
 	"github.com/ardasevinc/cx/internal/launcher"
 	"github.com/ardasevinc/cx/internal/picker"
+	"github.com/ardasevinc/cx/internal/projects"
 	"github.com/ardasevinc/cx/internal/sessions"
 	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "v0.1.10"
+const version = "v0.1.11"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)
@@ -57,6 +58,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) {
 	showVersionShort := flags.Bool("V", false, "print version and exit")
 	codexHome := flags.String("codex-home", "", "override Codex home directory")
 	listOnly := flags.Bool("list", false, "print indexed sessions and exit")
+	here := flags.Bool("here", false, "filter sessions to the current cwd/project")
+	cwd := flags.String("cwd", "", "filter sessions to this cwd/project")
 	limit := flags.Int("limit", 20, "maximum sessions to print with --list")
 	noAltScreen := flags.Bool("no-alt-screen", false, "run the picker without alternate screen mode")
 	flags.Usage = func() {
@@ -80,12 +83,28 @@ func run(args []string, stdout io.Writer, stderr io.Writer) {
 		die(fmt.Errorf("no Codex sessions found"))
 	}
 
+	scopeCWD, err := resolveScopeCWD(*here, *cwd)
+	if err != nil {
+		die(err)
+	}
+	currentCWD := scopeCWD
+	if currentCWD == "" {
+		currentCWD, _ = os.Getwd()
+	}
 	if *listOnly {
+		if scopeCWD != "" {
+			items = projects.FilterSessionsByCWD(items, scopeCWD, projects.Options{})
+		}
 		printList(stdout, items, *limit)
 		return
 	}
 
-	model := picker.NewWithIndex(items, indexer.Options{CodexHome: *codexHome})
+	var model picker.Model
+	if scopeCWD != "" {
+		model = picker.NewScopedWithIndex(items, indexer.Options{CodexHome: *codexHome}, scopeCWD)
+	} else {
+		model = picker.NewWithIndexForCWD(items, indexer.Options{CodexHome: *codexHome}, currentCWD)
+	}
 	options := []tea.ProgramOption{tea.WithOutput(os.Stderr), tea.WithMouseCellMotion()}
 	if !*noAltScreen {
 		options = append(options, tea.WithAltScreen())
@@ -109,6 +128,8 @@ func normalizeCommandArgs(args []string) []string {
 		return args
 	}
 	switch args[0] {
+	case "here":
+		return append([]string{"--here"}, args[1:]...)
 	case "ls", "list":
 		return append([]string{"--list"}, args[1:]...)
 	case "v", "version":
@@ -120,12 +141,28 @@ func normalizeCommandArgs(args []string) []string {
 	}
 }
 
+func resolveScopeCWD(here bool, cwd string) (string, error) {
+	if cwd != "" {
+		return launcher.ProjectDir(cwd)
+	}
+	if !here {
+		return "", nil
+	}
+	current, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return launcher.ProjectDir(current)
+}
+
 func printUsage(out io.Writer) {
 	_, _ = fmt.Fprintln(out, `cx - Codex session picker
 
 Usage:
   cx [flags]
-  cx list [--limit N]
+  cx here
+  cx --cwd DIR
+  cx list [--here|--cwd DIR] [--limit N]
   cx new [name]
   cx new --cwd DIR
   cx index status|refresh|rebuild|vacuum
@@ -135,6 +172,8 @@ Usage:
 
 Flags:
   --codex-home DIR    Read Codex state from DIR instead of ~/.codex.
+  --here              Filter sessions to the current cwd/project.
+  --cwd DIR           Filter sessions to this cwd/project.
   --list              Print sessions and exit.
   --limit N           Maximum sessions for --list. Default: 20.
   --no-alt-screen     Render in the current terminal buffer.
@@ -169,6 +208,7 @@ Commands:
   :copy id|path|cwd|title|resume|fork
   :view all|chats|projects|grouped|compact|comfy
   :group projects|chats
+  :here
   :sort date|source
   :open | :close | :toggle | :open-all | :close-all
   :preview

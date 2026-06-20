@@ -243,6 +243,8 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 			m.setGroup(strings.ToLower(fields[1]))
 		}
 		m.refreshRows()
+	case "here", "cwd":
+		m.toggleScope()
 	case "s", "sort":
 		m.setProjectChildSort(fields[1:])
 	case "open":
@@ -268,6 +270,20 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 	}
 	m.clamp()
 	return m, m.loadSelectedPreviewCmd()
+}
+
+func (m *Model) toggleScope() {
+	if strings.TrimSpace(m.scopeCWD) == "" {
+		m.notice = "no cwd scope configured"
+		return
+	}
+	m.scopeActive = !m.scopeActive
+	m.refreshRows()
+	if m.scopeActive {
+		m.notice = "showing " + m.scopeLabel()
+	} else {
+		m.notice = "showing all sessions"
+	}
 }
 
 func (m *Model) toggleDetail() {

@@ -85,6 +85,9 @@ type row struct {
 type Model struct {
 	all                 []sessions.Session
 	roots               map[string]projects.Root
+	scopeCWD            string
+	scopeRoot           projects.Root
+	scopeActive         bool
 	filtered            []sessions.Session
 	rows                []row
 	query               string
@@ -122,14 +125,30 @@ type copyMsg struct {
 }
 
 func New(items []sessions.Session) Model {
-	return newModel(items, indexer.Options{}, false)
+	return newModel(items, indexer.Options{}, false, "", false)
 }
 
 func NewWithIndex(items []sessions.Session, opts indexer.Options) Model {
-	return newModel(items, opts, true)
+	return newModel(items, opts, true, "", false)
 }
 
-func newModel(items []sessions.Session, opts indexer.Options, indexEnabled bool) Model {
+func NewScoped(items []sessions.Session, cwd string) Model {
+	return newModel(items, indexer.Options{}, false, cwd, true)
+}
+
+func NewScopedWithIndex(items []sessions.Session, opts indexer.Options, cwd string) Model {
+	return newModel(items, opts, true, cwd, true)
+}
+
+func NewWithCWD(items []sessions.Session, cwd string) Model {
+	return newModel(items, indexer.Options{}, false, cwd, false)
+}
+
+func NewWithIndexForCWD(items []sessions.Session, opts indexer.Options, cwd string) Model {
+	return newModel(items, opts, true, cwd, false)
+}
+
+func newModel(items []sessions.Session, opts indexer.Options, indexEnabled bool, scopeCWD string, scopeActive bool) Model {
 	model := Model{
 		all:              items,
 		roots:            projects.ClassifySessions(items, projects.Options{}),
@@ -143,6 +162,11 @@ func newModel(items []sessions.Session, opts indexer.Options, indexEnabled bool)
 		transcriptHits:   make(map[string][]indexer.SearchResult),
 		previewCache:     make(map[string]indexer.Preview),
 		previewPending:   make(map[string]bool),
+	}
+	if strings.TrimSpace(scopeCWD) != "" {
+		model.scopeCWD = scopeCWD
+		model.scopeRoot = projects.NewScope(scopeCWD, projects.Options{}).Root
+		model.scopeActive = scopeActive
 	}
 	model.refreshRows()
 	return model
@@ -199,6 +223,20 @@ func (m Model) View() string {
 
 func (m Model) Result() Result {
 	return m.result
+}
+
+func (m Model) ScopeActive() bool {
+	return m.scopeActive
+}
+
+func (m Model) scopeLabel() string {
+	if m.scopeRoot.DisplayName != "" {
+		return "here:" + m.scopeRoot.DisplayName
+	}
+	if m.scopeCWD != "" {
+		return "here:" + m.scopeCWD
+	}
+	return "here"
 }
 
 func (m *Model) move(delta int) {
@@ -289,6 +327,9 @@ func (m *Model) enterSelection() (Result, bool) {
 	}
 	switch selected.Kind {
 	case rowNewChat:
+		if selected.Dir != "" && !selected.Chat {
+			return Result{Action: ActionNew, Dir: selected.Dir}, false
+		}
 		return Result{Action: ActionNew, Chat: true}, false
 	case rowSession:
 		return Result{Action: ActionResume, Session: selected.Session}, false
@@ -309,7 +350,13 @@ func (m *Model) enterSelection() (Result, bool) {
 func (m Model) newSelection() Result {
 	selected, ok := m.selectedRow()
 	if !ok {
+		if m.scopeActive && m.scopeRoot.Dir != "" && m.scopeRoot.Kind != projects.KindChat {
+			return Result{Action: ActionNew, Dir: m.scopeRoot.Dir}
+		}
 		return Result{Action: ActionNew, Chat: true}
+	}
+	if selected.Kind == rowNewChat && selected.Dir != "" && !selected.Chat {
+		return Result{Action: ActionNew, Dir: selected.Dir}
 	}
 	switch selected.Kind {
 	case rowSession:

@@ -81,8 +81,16 @@ func (m *Model) refreshRows() {
 	}
 }
 
+func (m Model) baseSessions() []sessions.Session {
+	if !m.scopeActive {
+		return m.all
+	}
+	return projects.FilterSessionsByCWD(m.all, m.scopeCWD, projects.Options{})
+}
+
 func (m Model) filteredSessions() []sessions.Session {
-	filtered := sessions.Filter(m.all, m.query)
+	base := m.baseSessions()
+	filtered := sessions.Filter(base, m.query)
 	if strings.TrimSpace(m.query) == "" || len(m.transcriptHits) == 0 {
 		return filtered
 	}
@@ -90,7 +98,7 @@ func (m Model) filteredSessions() []sessions.Session {
 	for _, session := range filtered {
 		seen[session.ID] = true
 	}
-	for _, session := range m.all {
+	for _, session := range base {
 		if seen[session.ID] {
 			continue
 		}
@@ -105,13 +113,20 @@ func (m Model) filteredSessions() []sessions.Session {
 func (m Model) buildRows() []row {
 	rows := make([]row, 0, len(m.filtered)+1)
 	if m.query == "" {
-		rows = append(rows, row{
+		newRow := row{
 			Kind:  rowNewChat,
 			ID:    "action:new-chat",
 			Title: "+ new chat",
 			Meta:  "today · Documents/Codex",
 			Chat:  true,
-		})
+		}
+		if m.scopeActive && m.scopeRoot.Dir != "" && m.scopeRoot.Kind != projects.KindChat {
+			newRow.Title = "+ new here"
+			newRow.Meta = m.scopeRoot.Dir
+			newRow.Dir = m.scopeRoot.Dir
+			newRow.Chat = false
+		}
+		rows = append(rows, newRow)
 	}
 
 	switch m.view {

@@ -37,8 +37,11 @@ updates.
 
 ```sh
 cx
+cx here
+cx --cwd ~/programming/open-source/cx
 cx --list --limit 20
-cx list --limit 20
+cx list --here --limit 20
+cx list --cwd ~/programming/open-source/cx --limit 20
 cx new
 cx new "debug oauth staging"
 cx new --cwd ~/programming/open-source/cx
@@ -54,6 +57,14 @@ cx --no-alt-screen
 ```
 
 `cx --help` prints the full CLI, flag, key, and command reference.
+
+`cx here` filters the picker to recent threads relevant to the current shell
+directory. It prefers exact cwd matches, then sessions from the same detected
+git root, so running it from `repo/apps/web` still shows threads started from
+`repo`, `repo/apps/web`, or sibling repo directories. Use `cx --cwd DIR` to
+scope to another directory, or `cx list --here` / `cx list --cwd DIR` for
+noninteractive output. Inside the TUI, `:here` toggles this current cwd/project
+scope on and off.
 
 `cx index refresh` incrementally builds the local transcript cache at
 `~/.cache/cx/index.sqlite`. The cache is disposable; Codex's own
@@ -94,7 +105,7 @@ Keyboard:
 - `ctrl+p` opens the project launcher
 - `ctrl+g` opens grouped projects
 - `ctrl+f` to run `codex fork <session-id>`
-- `y` copies the selected session id
+- `ctrl+y` copies the selected session id
 - `:` opens command mode
 - `?` opens help
 - `tab` toggles preview
@@ -114,6 +125,8 @@ Command mode:
 :copy id|path|cwd|title|resume|fork
 :view all|chats|projects|grouped|compact|comfy
 :group projects|chats
+:here
+:sort date|source
 :open | :close | :toggle | :open-all | :close-all
 :preview
 :detail

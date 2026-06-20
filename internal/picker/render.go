@@ -44,6 +44,12 @@ func (m Model) header() string {
 			mode += ":date"
 		}
 	}
+	if m.scopeActive {
+		mode += " " + m.scopeLabel()
+	}
+	if m.scopeActive {
+		count = fmt.Sprintf("%d/%d", len(m.filtered), len(m.baseSessions()))
+	}
 	text := "cx  " + mode + "  " + query + "  " + count
 	return headerStyle.Render(truncate(text, paddedWidth(m.width)))
 }
@@ -59,7 +65,7 @@ func (m Model) footer() string {
 		}
 		return footerStyle.Render(truncate(text, paddedWidth(m.width)))
 	}
-	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :n chat  ^f fork  ^y copy  ? help"
+	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :here  ^f fork  ^y copy  ? help"
 	if m.preview {
 		text = "shift+↑/↓ preview  ctrl+pgup/pgdn preview  " + text
 	}
@@ -323,6 +329,7 @@ func (m Model) overlay(base string) string {
 		"views",
 		"  ctrl+p         project launcher",
 		"  ctrl+g         grouped projects",
+		"  :here          toggle current cwd/project scope",
 		"  tab            preview side/popup",
 		"  shift+up/down  scroll preview",
 		"  ctrl+pgup/dn   page preview",
@@ -333,6 +340,7 @@ func (m Model) overlay(base string) string {
 		"  :new [name]  :resume  :fork  :copy [id|path|cwd|title|resume|fork]",
 		"  :view [all|chats|projects|grouped|compact|comfy]",
 		"  :group [projects|chats]  :open  :close  :open-all  :close-all",
+		"  :here                  toggle current cwd/project scope",
 		"  :sort [date|source]  sort chats inside grouped projects only",
 		"  :preview  :detail  :clear  :quit",
 		"",

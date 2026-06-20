@@ -4,8 +4,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/ardasevinc/cx/internal/sessions"
 )
 
 func TestClassifyChatPath(t *testing.T) {
@@ -59,6 +62,100 @@ func TestClassifyMissingPath(t *testing.T) {
 	if root.Kind != KindMissing || root.Dir != missing {
 		t.Fatalf("unexpected missing root: %#v", root)
 	}
+}
+
+func TestFilterSessionsByCWDSameGitRoot(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repo := t.TempDir()
+	repo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "init")
+	app := filepath.Join(repo, "apps", "web")
+	pkg := filepath.Join(repo, "packages", "api")
+	other := filepath.Join(t.TempDir(), "other")
+	for _, dir := range []string{app, pkg, other} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := FilterSessionsByCWD([]sessions.Session{
+		{ID: "root", CWD: repo},
+		{ID: "app", CWD: app},
+		{ID: "pkg", CWD: pkg},
+		{ID: "other", CWD: other},
+	}, app, Options{GitTimeout: time.Second})
+
+	if ids := sessionIDs(got); ids != "root,app,pkg" {
+		t.Fatalf("expected same git root sessions, got %q", ids)
+	}
+}
+
+func TestScopeDoesNotMatchEverythingUnderHome(t *testing.T) {
+	home := t.TempDir()
+	project := filepath.Join(home, "src", "cx")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := FilterSessionsByCWD([]sessions.Session{
+		{ID: "home", CWD: home},
+		{ID: "project", CWD: project},
+	}, home, Options{Home: home})
+
+	if ids := sessionIDs(got); ids != "home" {
+		t.Fatalf("expected only exact home session, got %q", ids)
+	}
+}
+
+func TestProjectScopeDoesNotMatchHomeAncestorSession(t *testing.T) {
+	home := t.TempDir()
+	project := filepath.Join(home, "src", "cx")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := FilterSessionsByCWD([]sessions.Session{
+		{ID: "home", CWD: home},
+		{ID: "project", CWD: project},
+	}, project, Options{Home: home})
+
+	if ids := sessionIDs(got); ids != "project" {
+		t.Fatalf("expected only project session, got %q", ids)
+	}
+}
+
+func TestProjectScopeDoesNotMatchBroadParentDirectory(t *testing.T) {
+	parent := t.TempDir()
+	project := filepath.Join(parent, "cx")
+	child := filepath.Join(project, "internal")
+	for _, dir := range []string{project, child} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := FilterSessionsByCWD([]sessions.Session{
+		{ID: "parent", CWD: parent},
+		{ID: "project", CWD: project},
+		{ID: "child", CWD: child},
+	}, project, Options{})
+
+	if ids := sessionIDs(got); ids != "project,child" {
+		t.Fatalf("expected project and child sessions, got %q", ids)
+	}
+}
+
+func sessionIDs(items []sessions.Session) string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return strings.Join(ids, ",")
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

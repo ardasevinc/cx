@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -184,6 +185,68 @@ func TestProjectViewStartsNewThreadInProject(t *testing.T) {
 
 	if result.Action != ActionNew || result.Dir != "/home/alice/src/cx" {
 		t.Fatalf("expected project new action, got %#v", result)
+	}
+}
+
+func TestScopedPickerShowsOnlyMatchingCWD(t *testing.T) {
+	root := t.TempDir()
+	cxDir := filepath.Join(root, "cx")
+	otherDir := filepath.Join(root, "other")
+	model := NewScoped([]sessions.Session{
+		{ID: "cx", Title: "cx work", CWD: cxDir},
+		{ID: "other", Title: "other work", CWD: otherDir},
+	}, cxDir)
+	model.width = 80
+	model.height = 20
+
+	if len(model.filtered) != 1 || model.filtered[0].ID != "cx" {
+		t.Fatalf("expected scoped cx session, got %#v", model.filtered)
+	}
+	if !strings.Contains(model.header(), "here:cx") {
+		t.Fatalf("expected here scope in header, got %q", model.header())
+	}
+}
+
+func TestHereCommandTogglesDormantCWDScope(t *testing.T) {
+	root := t.TempDir()
+	cxDir := filepath.Join(root, "cx")
+	otherDir := filepath.Join(root, "other")
+	model := NewWithCWD([]sessions.Session{
+		{ID: "cx", Title: "cx work", CWD: cxDir},
+		{ID: "other", Title: "other work", CWD: otherDir},
+	}, cxDir)
+	model.width = 80
+	model.height = 20
+
+	if len(model.filtered) != 2 {
+		t.Fatalf("expected unscoped picker initially, got %#v", model.filtered)
+	}
+
+	updated, _ := model.executeCommand("here")
+	next := updated.(Model)
+	if !next.scopeActive || len(next.filtered) != 1 || next.filtered[0].ID != "cx" {
+		t.Fatalf("expected :here to enable cwd scope, scope=%v filtered=%#v", next.scopeActive, next.filtered)
+	}
+
+	updated, _ = next.executeCommand("here")
+	next = updated.(Model)
+	if next.scopeActive || len(next.filtered) != 2 {
+		t.Fatalf("expected second :here to disable cwd scope, scope=%v filtered=%#v", next.scopeActive, next.filtered)
+	}
+}
+
+func TestScopedNewChatStartsInScopedDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cx")
+	model := NewScoped([]sessions.Session{{ID: "cx", Title: "cx work", CWD: dir}}, dir)
+	model.width = 80
+	model.height = 20
+	model.cursor = 0
+
+	updated, _ := model.updateKeys(tea.KeyMsg{Type: tea.KeyEnter})
+	result := updated.(Model).result
+
+	if result.Action != ActionNew || result.Dir != dir || result.Chat {
+		t.Fatalf("expected new scoped project action, got %#v", result)
 	}
 }
 

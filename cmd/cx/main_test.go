@@ -39,3 +39,11 @@ func TestPrintStatusTextHumanizesCacheSize(t *testing.T) {
 		t.Fatalf("expected readable freshness state, got:\n%s", text)
 	}
 }
+
+func TestNormalizeHereCommand(t *testing.T) {
+	got := normalizeCommandArgs([]string{"here", "--limit", "5"})
+	want := []string{"--here", "--limit", "5"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("unexpected normalized args: %#v", got)
+	}
+}
