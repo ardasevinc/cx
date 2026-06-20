@@ -19,7 +19,7 @@ import (
 	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "v0.1.9"
+const version = "v0.1.10"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)
@@ -405,6 +405,13 @@ func printStatusText(out io.Writer, status indexer.Status) {
 	_, _ = fmt.Fprintf(out, "state db:    %s\n", status.StateDBPath)
 	_, _ = fmt.Fprintf(out, "schema:      %d\n", status.SchemaVersion)
 	_, _ = fmt.Fprintf(out, "fts:         %s\n", enabledText(status.FTSAvailable))
+	if status.SourceSessions > 0 || status.SourceLatestAt != "" || status.SourceError != "" {
+		_, _ = fmt.Fprintf(out, "source:      %s live", formatCount(status.SourceSessions))
+		if status.SourceLatestAt != "" {
+			_, _ = fmt.Fprintf(out, ", latest %s", status.SourceLatestAt)
+		}
+		_, _ = fmt.Fprintln(out)
+	}
 	_, _ = fmt.Fprintf(out, "sessions:    %s total, %s indexed, %s pending, %s failed, %s missing, %s truncated\n",
 		formatCount(status.TotalSessions),
 		formatCount(status.IndexedSessions),
@@ -412,10 +419,19 @@ func printStatusText(out io.Writer, status indexer.Status) {
 		formatCount(status.FailedSessions),
 		formatCount(status.MissingSessions),
 		formatCount(status.TruncatedSessions))
+	if status.SourceSessions > 0 || status.FreshSessions > 0 || status.StaleSessions > 0 || status.UncachedSessions > 0 {
+		_, _ = fmt.Fprintf(out, "freshness:   %s fresh, %s stale, %s uncached\n",
+			formatCount(status.FreshSessions),
+			formatCount(status.StaleSessions),
+			formatCount(status.UncachedSessions))
+	}
 	_, _ = fmt.Fprintf(out, "chunks:      %s\n", formatCount(status.ChunkCount))
 	_, _ = fmt.Fprintf(out, "cache size:  %s\n", formatBytes(status.CacheBytes))
 	if status.LatestIndexedAt != "" {
-		_, _ = fmt.Fprintf(out, "latest:      %s\n", status.LatestIndexedAt)
+		_, _ = fmt.Fprintf(out, "indexed:     %s\n", status.LatestIndexedAt)
+	}
+	if status.SourceError != "" {
+		_, _ = fmt.Fprintf(out, "source err:  %s\n", status.SourceError)
 	}
 }
 

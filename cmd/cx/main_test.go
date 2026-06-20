@@ -15,6 +15,9 @@ func TestPrintStatusTextHumanizesCacheSize(t *testing.T) {
 		TotalSessions:     1062,
 		IndexedSessions:   869,
 		TruncatedSessions: 193,
+		FreshSessions:     860,
+		StaleSessions:     2,
+		UncachedSessions:  7,
 		ChunkCount:        76810,
 		CacheBytes:        139804672,
 	})
@@ -31,5 +34,8 @@ func TestPrintStatusTextHumanizesCacheSize(t *testing.T) {
 	}
 	if !strings.Contains(text, "fts:         enabled") {
 		t.Fatalf("expected readable fts state, got:\n%s", text)
+	}
+	if !strings.Contains(text, "freshness:   860 fresh, 2 stale, 7 uncached") {
+		t.Fatalf("expected readable freshness state, got:\n%s", text)
 	}
 }

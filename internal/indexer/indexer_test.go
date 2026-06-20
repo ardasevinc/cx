@@ -94,6 +94,47 @@ func TestDoctorReportsEmptyCache(t *testing.T) {
 	}
 }
 
+func TestCurrentStatusReportsSourceFreshness(t *testing.T) {
+	root := t.TempDir()
+	codexHome := filepath.Join(root, ".codex")
+	sessionDir := filepath.Join(codexHome, "sessions", "2026", "06", "10")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	indexedRollout := filepath.Join(sessionDir, "rollout-indexed.jsonl")
+	writeFile(t, indexedRollout, `{"type":"session_meta","payload":{"id":"indexed-thread","timestamp":"2026-06-10T10:00:00Z","cwd":"/tmp/cx","source":"cli","thread_source":"user"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"indexed before state changed"}]}}
+`)
+	statePath := filepath.Join(codexHome, "state_5.sqlite")
+	createStateDB(t, statePath, indexedRollout, "indexed-thread")
+
+	cachePath := filepath.Join(root, "cache.sqlite")
+	if _, err := Rebuild(Options{CodexHome: codexHome, CachePath: cachePath}); err != nil {
+		t.Fatal(err)
+	}
+
+	updateStateThreadUpdatedAt(t, statePath, "indexed-thread", 3000)
+	uncachedRollout := filepath.Join(sessionDir, "rollout-uncached.jsonl")
+	writeFile(t, uncachedRollout, `{"type":"session_meta","payload":{"id":"uncached-thread","timestamp":"2026-06-10T11:00:00Z","cwd":"/tmp/cx","source":"cli","thread_source":"user"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"not indexed yet"}]}}
+`)
+	insertStateThread(t, statePath, uncachedRollout, "uncached-thread", 4000)
+
+	status, err := CurrentStatus(Options{CodexHome: codexHome, CachePath: cachePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.SourceSessions != 2 || status.TotalSessions != 1 {
+		t.Fatalf("expected two live sessions and one cached session, got %#v", status)
+	}
+	if status.FreshSessions != 0 || status.StaleSessions != 1 || status.UncachedSessions != 1 {
+		t.Fatalf("unexpected freshness counts: %#v", status)
+	}
+	if status.SourceLatestAt == "" {
+		t.Fatalf("expected source latest timestamp")
+	}
+}
+
 func createStateDB(t *testing.T, path, rolloutPath, id string) {
 	t.Helper()
 	statement := `
@@ -155,6 +196,38 @@ values (?, ?, 1, 2, 'cli', 'openai', '/tmp/cx', 'Index fixture', '{}', 'never', 
 		if _, err := db.Exec(part); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func updateStateThreadUpdatedAt(t *testing.T, path, id string, updatedAtMS int64) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = db.Close()
+	}()
+	if _, err := db.Exec(`update threads set updated_at_ms = ? where id = ?`, updatedAtMS, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func insertStateThread(t *testing.T, path, rolloutPath, id string, updatedAtMS int64) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = db.Close()
+	}()
+	_, err = db.Exec(`
+insert into threads (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, sandbox_policy, approval_mode, tokens_used, archived, created_at_ms, updated_at_ms, first_user_message, thread_source, preview)
+values (?, ?, 1, 4, 'cli', 'openai', '/tmp/cx', 'Uncached fixture', '{}', 'never', 0, 0, 1000, ?, 'not indexed yet', 'user', 'Uncached preview');
+`, id, rolloutPath, updatedAtMS)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

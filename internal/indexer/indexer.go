@@ -37,15 +37,21 @@ type Status struct {
 	StateDBPath       string   `json:"state_db_path"`
 	SchemaVersion     int      `json:"schema_version"`
 	FTSAvailable      bool     `json:"fts_available"`
+	SourceSessions    int      `json:"source_sessions"`
+	SourceLatestAt    string   `json:"source_latest_at"`
 	TotalSessions     int      `json:"total_sessions"`
 	IndexedSessions   int      `json:"indexed_sessions"`
 	PendingSessions   int      `json:"pending_sessions"`
 	FailedSessions    int      `json:"failed_sessions"`
 	MissingSessions   int      `json:"missing_sessions"`
 	TruncatedSessions int      `json:"truncated_sessions"`
+	FreshSessions     int      `json:"fresh_sessions"`
+	StaleSessions     int      `json:"stale_sessions"`
+	UncachedSessions  int      `json:"uncached_sessions"`
 	ChunkCount        int      `json:"chunk_count"`
 	CacheBytes        int64    `json:"cache_bytes"`
 	LatestIndexedAt   string   `json:"latest_indexed_at"`
+	SourceError       string   `json:"source_error,omitempty"`
 	Problems          []string `json:"problems,omitempty"`
 }
 
@@ -313,6 +319,15 @@ func Doctor(opts Options) (Status, error) {
 	}
 	if status.TotalSessions == 0 {
 		status.Problems = append(status.Problems, "cache has no indexed session metadata")
+	}
+	if status.SourceError != "" {
+		status.Problems = append(status.Problems, "source sessions unreadable: "+status.SourceError)
+	}
+	if status.UncachedSessions > 0 {
+		status.Problems = append(status.Problems, fmt.Sprintf("%d source sessions are not in the cache; run cx index refresh", status.UncachedSessions))
+	}
+	if status.StaleSessions > 0 {
+		status.Problems = append(status.Problems, fmt.Sprintf("%d cached sessions are stale; run cx index refresh", status.StaleSessions))
 	}
 	if status.FailedSessions > 0 {
 		status.Problems = append(status.Problems, fmt.Sprintf("%d sessions failed indexing", status.FailedSessions))
@@ -709,7 +724,66 @@ func readStatus(db *sql.DB, paths paths) (Status, error) {
 	if info, err := os.Stat(paths.cachePath); err == nil {
 		status.CacheBytes = info.Size()
 	}
+	annotateSourceFreshness(db, paths, &status)
 	return status, nil
+}
+
+type cachedFreshness struct {
+	UpdatedAtMS int64
+}
+
+func annotateSourceFreshness(db *sql.DB, paths paths, status *Status) {
+	items, err := sessions.Load(sessions.Options{CodexHome: paths.codexHome})
+	if err != nil {
+		status.SourceError = err.Error()
+		return
+	}
+	status.SourceSessions = len(items)
+	var latest time.Time
+	for _, item := range items {
+		if item.UpdatedAt.After(latest) {
+			latest = item.UpdatedAt
+		}
+	}
+	if !latest.IsZero() {
+		status.SourceLatestAt = latest.Local().Format(time.RFC3339)
+	}
+
+	cached := make(map[string]cachedFreshness, status.TotalSessions)
+	rows, err := db.Query(`select session_id, indexed_updated_at_ms from sessions`)
+	if err != nil {
+		status.SourceError = err.Error()
+		return
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+	for rows.Next() {
+		var id string
+		var item cachedFreshness
+		if err := rows.Scan(&id, &item.UpdatedAtMS); err != nil {
+			status.SourceError = err.Error()
+			return
+		}
+		cached[id] = item
+	}
+	if err := rows.Err(); err != nil {
+		status.SourceError = err.Error()
+		return
+	}
+
+	for _, item := range items {
+		cachedItem, ok := cached[item.ID]
+		if !ok {
+			status.UncachedSessions++
+			continue
+		}
+		if cachedItem.UpdatedAtMS != item.UpdatedAt.UnixMilli() {
+			status.StaleSessions++
+			continue
+		}
+		status.FreshSessions++
+	}
 }
 
 func ftsAvailable(db *sql.DB) (bool, error) {
