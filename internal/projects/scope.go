@@ -19,9 +19,17 @@ func NewScope(cwd string, opts Options) Scope {
 
 func FilterSessionsByCWD(items []sessions.Session, cwd string, opts Options) []sessions.Session {
 	scope := NewScope(cwd, opts)
+	return FilterSessionsByScope(items, scope, ClassifySessions(items, opts), opts)
+}
+
+func FilterSessionsByScope(items []sessions.Session, scope Scope, roots map[string]Root, opts Options) []sessions.Session {
 	filtered := make([]sessions.Session, 0, len(items))
 	for _, item := range items {
-		if scope.Matches(item.CWD, opts) {
+		root, ok := roots[item.CWD]
+		if !ok {
+			root = ClassifyCWD(item.CWD, opts)
+		}
+		if scope.MatchesRoot(item.CWD, root) {
 			filtered = append(filtered, item)
 		}
 	}
@@ -29,6 +37,10 @@ func FilterSessionsByCWD(items []sessions.Session, cwd string, opts Options) []s
 }
 
 func (s Scope) Matches(cwd string, opts Options) bool {
+	return s.MatchesRoot(cwd, ClassifyCWD(cwd, opts))
+}
+
+func (s Scope) MatchesRoot(cwd string, candidateRoot Root) bool {
 	if s.CWD == "" || cwd == "" {
 		return false
 	}
@@ -38,7 +50,6 @@ func (s Scope) Matches(cwd string, opts Options) bool {
 		return true
 	}
 
-	candidateRoot := ClassifyCWD(candidate, opts)
 	if s.Root.Kind == KindGit && candidateRoot.Kind == KindGit && samePath(s.Root.Dir, candidateRoot.Dir) {
 		return true
 	}

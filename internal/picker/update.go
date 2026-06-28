@@ -33,8 +33,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadSelectedPreviewCmd()
 	case previewLoadedMsg:
 		m.applyPreviewLoaded(msg)
-	case indexRefreshMsg:
-		m.applyIndexRefresh(msg)
 	}
 	return m, nil
 }

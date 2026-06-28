@@ -87,6 +87,7 @@ type Model struct {
 	roots               map[string]projects.Root
 	scopeCWD            string
 	scopeRoot           projects.Root
+	scopeBase           []sessions.Session
 	scopeActive         bool
 	filtered            []sessions.Session
 	rows                []row
@@ -165,7 +166,9 @@ func newModel(items []sessions.Session, opts indexer.Options, indexEnabled bool,
 	}
 	if strings.TrimSpace(scopeCWD) != "" {
 		model.scopeCWD = scopeCWD
-		model.scopeRoot = projects.NewScope(scopeCWD, projects.Options{}).Root
+		scope := projects.NewScope(scopeCWD, projects.Options{})
+		model.scopeRoot = scope.Root
+		model.scopeBase = projects.FilterSessionsByScope(items, scope, model.roots, projects.Options{})
 		model.scopeActive = scopeActive
 	}
 	model.refreshRows()
@@ -176,7 +179,7 @@ func (m Model) Init() tea.Cmd {
 	if !m.indexEnabled {
 		return nil
 	}
-	return tea.Batch(m.refreshIndexCmd(), m.loadSelectedPreviewCmd())
+	return m.loadSelectedPreviewCmd()
 }
 
 func (m Model) View() string {

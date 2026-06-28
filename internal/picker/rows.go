@@ -85,7 +85,7 @@ func (m Model) baseSessions() []sessions.Session {
 	if !m.scopeActive {
 		return m.all
 	}
-	return projects.FilterSessionsByCWD(m.all, m.scopeCWD, projects.Options{})
+	return m.scopeBase
 }
 
 func (m Model) filteredSessions() []sessions.Session {

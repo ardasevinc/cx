@@ -95,6 +95,41 @@ func TestFilterSessionsByCWDSameGitRoot(t *testing.T) {
 	}
 }
 
+func TestFilterSessionsByScopeUsesProvidedRoots(t *testing.T) {
+	scope := Scope{
+		CWD: "/repo/apps/web",
+		Root: Root{
+			Kind: KindGit,
+			Dir:  "/repo",
+		},
+	}
+	items := []sessions.Session{
+		{ID: "web", CWD: "/repo/apps/web"},
+		{ID: "api", CWD: "/repo/packages/api"},
+		{ID: "other", CWD: "/other"},
+	}
+	roots := map[string]Root{
+		"/repo/apps/web": {
+			Kind: KindGit,
+			Dir:  "/repo",
+		},
+		"/repo/packages/api": {
+			Kind: KindGit,
+			Dir:  "/repo",
+		},
+		"/other": {
+			Kind: KindCWD,
+			Dir:  "/other",
+		},
+	}
+
+	got := FilterSessionsByScope(items, scope, roots, Options{})
+
+	if ids := sessionIDs(got); ids != "web,api" {
+		t.Fatalf("expected same provided git root sessions, got %q", ids)
+	}
+}
+
 func TestScopeDoesNotMatchEverythingUnderHome(t *testing.T) {
 	home := t.TempDir()
 	project := filepath.Join(home, "src", "cx")

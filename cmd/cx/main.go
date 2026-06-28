@@ -20,7 +20,7 @@ import (
 	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "v0.1.11"
+const version = "v0.1.12"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)
@@ -93,7 +93,9 @@ func run(args []string, stdout io.Writer, stderr io.Writer) {
 	}
 	if *listOnly {
 		if scopeCWD != "" {
-			items = projects.FilterSessionsByCWD(items, scopeCWD, projects.Options{})
+			scope := projects.NewScope(scopeCWD, projects.Options{})
+			roots := projects.ClassifySessions(items, projects.Options{})
+			items = projects.FilterSessionsByScope(items, scope, roots, projects.Options{})
 		}
 		printList(stdout, items, *limit)
 		return

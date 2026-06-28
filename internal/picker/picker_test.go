@@ -586,6 +586,14 @@ func TestTranscriptSearchMessageAddsTranscriptOnlyRows(t *testing.T) {
 	}
 }
 
+func TestInitDoesNotRefreshIndexWithoutSelection(t *testing.T) {
+	model := NewWithIndex(nil, indexer.Options{})
+
+	if cmd := model.Init(); cmd != nil {
+		t.Fatal("expected init to avoid startup index refresh")
+	}
+}
+
 func TestNormalizePreviewTextUnwrapsMarkdownTableFence(t *testing.T) {
 	text := "```markdown\n| A | B |\n| --- | --- |\n| 1 | 2 |\n```"
 

@@ -1,7 +1,6 @@
 package picker
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,11 +21,6 @@ type previewLoadedMsg struct {
 	err       error
 }
 
-type indexRefreshMsg struct {
-	result indexer.RebuildResult
-	err    error
-}
-
 func (m *Model) queueTranscriptSearch() tea.Cmd {
 	if !m.indexEnabled {
 		return nil
@@ -43,16 +37,6 @@ func (m *Model) queueTranscriptSearch() tea.Cmd {
 	return func() tea.Msg {
 		results, err := indexer.Search(m.indexOptions, query, 80)
 		return transcriptSearchMsg{seq: seq, query: query, results: results, err: err}
-	}
-}
-
-func (m Model) refreshIndexCmd() tea.Cmd {
-	if !m.indexEnabled {
-		return nil
-	}
-	return func() tea.Msg {
-		result, err := indexer.Refresh(m.indexOptions)
-		return indexRefreshMsg{result: result, err: err}
 	}
 }
 
@@ -117,16 +101,6 @@ func (m *Model) applyPreviewLoaded(msg previewLoadedMsg) {
 	}
 	m.previewCache[msg.sessionID] = msg.preview
 	m.previewScroll = min(m.previewScroll, m.maxPreviewScroll())
-}
-
-func (m *Model) applyIndexRefresh(msg indexRefreshMsg) {
-	if msg.err != nil {
-		m.notice = "index refresh failed: " + msg.err.Error()
-		return
-	}
-	if msg.result.IndexedCount > 0 || msg.result.Status.TruncatedSessions > 0 {
-		m.notice = fmt.Sprintf("index refreshed: %d indexed, %d truncated", msg.result.IndexedCount, msg.result.Status.TruncatedSessions)
-	}
 }
 
 func (m Model) hitSnippet(sessionID string) string {
