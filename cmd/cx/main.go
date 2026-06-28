@@ -20,7 +20,7 @@ import (
 	"github.com/ardasevinc/cx/internal/updater"
 )
 
-const version = "v0.1.12"
+const version = "v0.1.13"
 
 func main() {
 	run(os.Args[1:], os.Stdout, os.Stderr)

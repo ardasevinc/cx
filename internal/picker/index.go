@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,6 +20,26 @@ type previewLoadedMsg struct {
 	sessionID string
 	preview   indexer.Preview
 	err       error
+}
+
+type indexStatusMsg struct {
+	status indexer.Status
+	err    error
+}
+
+type indexRefreshMsg struct {
+	result indexer.RebuildResult
+	err    error
+}
+
+func (m Model) checkIndexStatusCmd() tea.Cmd {
+	if !m.indexEnabled {
+		return nil
+	}
+	return func() tea.Msg {
+		status, err := indexer.CurrentStatus(m.indexOptions)
+		return indexStatusMsg{status: status, err: err}
+	}
 }
 
 func (m *Model) queueTranscriptSearch() tea.Cmd {
@@ -40,6 +61,16 @@ func (m *Model) queueTranscriptSearch() tea.Cmd {
 	}
 }
 
+func (m Model) refreshIndexCmd() tea.Cmd {
+	if !m.indexEnabled {
+		return nil
+	}
+	return func() tea.Msg {
+		result, err := indexer.Refresh(m.indexOptions)
+		return indexRefreshMsg{result: result, err: err}
+	}
+}
+
 func (m *Model) loadSelectedPreviewCmd() tea.Cmd {
 	if !m.indexEnabled {
 		return nil
@@ -58,6 +89,30 @@ func (m *Model) loadSelectedPreviewCmd() tea.Cmd {
 		preview, err := indexer.LoadPreview(m.indexOptions, sessionID, query, 2048)
 		return previewLoadedMsg{sessionID: sessionID, preview: preview, err: err}
 	}
+}
+
+func (m *Model) applyIndexStatus(msg indexStatusMsg) {
+	m.indexChecking = false
+	if msg.err != nil {
+		m.notice = "index status failed: " + msg.err.Error()
+		return
+	}
+	m.indexStatus = &msg.status
+}
+
+func (m *Model) applyIndexRefresh(msg indexRefreshMsg) {
+	m.indexChecking = false
+	m.indexRefreshing = false
+	if msg.err != nil {
+		m.notice = "index refresh failed: " + msg.err.Error()
+		return
+	}
+	m.indexStatus = &msg.result.Status
+	if stale := indexStaleCount(msg.result.Status); stale > 0 {
+		m.notice = "index refreshed; still stale: " + indexSessionCount(stale)
+		return
+	}
+	m.notice = "index fresh: " + indexSessionCount(msg.result.Status.FreshSessions)
 }
 
 func (m *Model) applyTranscriptSearch(msg transcriptSearchMsg) {
@@ -109,4 +164,15 @@ func (m Model) hitSnippet(sessionID string) string {
 		return ""
 	}
 	return hits[0].Role + ": " + hits[0].Snippet
+}
+
+func indexStaleCount(status indexer.Status) int {
+	return status.StaleSessions + status.UncachedSessions
+}
+
+func indexSessionCount(count int) string {
+	if count == 1 {
+		return "1 session"
+	}
+	return strconv.Itoa(count) + " sessions"
 }

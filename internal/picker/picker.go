@@ -113,6 +113,9 @@ type Model struct {
 	result              Result
 	indexEnabled        bool
 	indexOptions        indexer.Options
+	indexChecking       bool
+	indexRefreshing     bool
+	indexStatus         *indexer.Status
 	searchSeq           int
 	searchPending       bool
 	transcriptHits      map[string][]indexer.SearchResult
@@ -160,6 +163,7 @@ func newModel(items []sessions.Session, opts indexer.Options, indexEnabled bool,
 		collapsed:        make(map[string]bool),
 		indexEnabled:     indexEnabled,
 		indexOptions:     opts,
+		indexChecking:    indexEnabled,
 		transcriptHits:   make(map[string][]indexer.SearchResult),
 		previewCache:     make(map[string]indexer.Preview),
 		previewPending:   make(map[string]bool),
@@ -179,7 +183,7 @@ func (m Model) Init() tea.Cmd {
 	if !m.indexEnabled {
 		return nil
 	}
-	return m.loadSelectedPreviewCmd()
+	return tea.Batch(m.checkIndexStatusCmd(), m.loadSelectedPreviewCmd())
 }
 
 func (m Model) View() string {

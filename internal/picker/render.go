@@ -59,23 +59,52 @@ func (m Model) footer() string {
 		return commandStyle.Render(truncate(":"+m.cmdText, paddedWidth(m.width)))
 	}
 	if m.view == viewGrouped {
-		text := "enter toggle  ← close  → open  ^n new here  :sort date/source  :open-all/:close-all  ^p projects"
+		text := "enter toggle  ← close  → open  ^n new here  :refresh  :sort date/source  :open-all/:close-all  ^p projects"
+		if indexNotice := m.indexFooterNotice(); indexNotice != "" {
+			text = indexNotice + "  " + text
+		}
 		if m.notice != "" {
 			text = m.notice + "  " + text
 		}
 		return footerStyle.Render(truncate(text, paddedWidth(m.width)))
 	}
-	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :here  ^f fork  ^y copy  ? help"
+	text := "enter resume/new/toggle  ^n new here  ^p projects  ^g grouped  :here  :refresh  ^f fork  ^y copy  ? help"
 	if m.preview {
 		text = "shift+↑/↓ preview  ctrl+pgup/pgdn preview  " + text
 	}
 	if m.searchPending {
 		text = "transcript search pending  " + text
 	}
+	if indexNotice := m.indexFooterNotice(); indexNotice != "" {
+		text = indexNotice + "  " + text
+	}
 	if m.notice != "" {
 		text = m.notice + "  " + text
 	}
 	return footerStyle.Render(truncate(text, paddedWidth(m.width)))
+}
+
+func (m Model) indexFooterNotice() string {
+	if !m.indexEnabled {
+		return ""
+	}
+	if m.indexRefreshing {
+		return "refreshing index..."
+	}
+	if m.indexChecking {
+		return "checking index..."
+	}
+	if m.indexStatus == nil {
+		return ""
+	}
+	stale := indexStaleCount(*m.indexStatus)
+	if stale == 0 {
+		return ""
+	}
+	if strings.TrimSpace(m.query) != "" {
+		return "transcript results may miss " + indexSessionCount(stale) + "  :refresh"
+	}
+	return "index stale: " + indexSessionCount(stale) + "  :refresh"
 }
 
 func (m Model) renderList(width int) string {
@@ -341,6 +370,7 @@ func (m Model) overlay(base string) string {
 		"  :view [all|chats|projects|grouped|compact|comfy]",
 		"  :group [projects|chats]  :open  :close  :open-all  :close-all",
 		"  :here                  toggle current cwd/project scope",
+		"  :refresh               refresh transcript index",
 		"  :sort [date|source]  sort chats inside grouped projects only",
 		"  :preview  :detail  :clear  :quit",
 		"",

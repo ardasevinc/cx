@@ -586,11 +586,81 @@ func TestTranscriptSearchMessageAddsTranscriptOnlyRows(t *testing.T) {
 	}
 }
 
-func TestInitDoesNotRefreshIndexWithoutSelection(t *testing.T) {
-	model := NewWithIndex(nil, indexer.Options{})
+func TestInitChecksIndexWithoutRefreshing(t *testing.T) {
+	codexHome := t.TempDir()
+	cachePath := filepath.Join(t.TempDir(), "index.sqlite")
+	model := NewWithIndex(nil, indexer.Options{CodexHome: codexHome, CachePath: cachePath})
 
-	if cmd := model.Init(); cmd != nil {
-		t.Fatal("expected init to avoid startup index refresh")
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatal("expected init to queue index status check")
+	}
+	msg := cmd()
+	if _, ok := msg.(indexStatusMsg); !ok {
+		t.Fatalf("expected init to queue index status check, got %T", msg)
+	}
+}
+
+func TestIndexFooterShowsStaleRefreshAction(t *testing.T) {
+	model := NewWithIndex([]sessions.Session{{ID: "one", Title: "one"}}, indexer.Options{})
+	model.width = 120
+	model.height = 20
+	model.indexChecking = false
+	model.indexStatus = &indexer.Status{StaleSessions: 2, UncachedSessions: 1}
+
+	footer := model.footer()
+
+	if !strings.Contains(footer, "index stale: 3 sessions") || !strings.Contains(footer, ":refresh") {
+		t.Fatalf("expected stale refresh hint, got %q", footer)
+	}
+}
+
+func TestIndexFooterWarnsTranscriptSearchMayMissStaleSessions(t *testing.T) {
+	model := NewWithIndex([]sessions.Session{{ID: "one", Title: "one"}}, indexer.Options{})
+	model.width = 140
+	model.height = 20
+	model.query = "needle"
+	model.indexChecking = false
+	model.indexStatus = &indexer.Status{UncachedSessions: 1}
+
+	footer := model.footer()
+
+	if !strings.Contains(footer, "transcript results may miss 1 session") || !strings.Contains(footer, ":refresh") {
+		t.Fatalf("expected transcript staleness hint, got %q", footer)
+	}
+}
+
+func TestRefreshCommandQueuesExplicitIndexRefresh(t *testing.T) {
+	model := NewWithIndex([]sessions.Session{{ID: "one", Title: "one"}}, indexer.Options{})
+
+	updated, cmd := model.executeCommand("refresh")
+	next := updated.(Model)
+
+	if !next.indexRefreshing {
+		t.Fatal("expected refresh command to mark index refreshing")
+	}
+	if cmd == nil {
+		t.Fatal("expected refresh command to queue index refresh")
+	}
+}
+
+func TestIndexRefreshMessageUpdatesStaleState(t *testing.T) {
+	model := NewWithIndex([]sessions.Session{{ID: "one", Title: "one"}}, indexer.Options{})
+	model.indexRefreshing = true
+	model.indexStatus = &indexer.Status{UncachedSessions: 1}
+
+	model.applyIndexRefresh(indexRefreshMsg{result: indexer.RebuildResult{
+		Status: indexer.Status{FreshSessions: 2},
+	}})
+
+	if model.indexRefreshing {
+		t.Fatal("expected refresh state to clear")
+	}
+	if model.indexStatus == nil || model.indexStatus.FreshSessions != 2 {
+		t.Fatalf("expected refreshed status, got %#v", model.indexStatus)
+	}
+	if notice := model.indexFooterNotice(); notice != "" {
+		t.Fatalf("expected no stale footer notice after refresh, got %q", notice)
 	}
 }
 

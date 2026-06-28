@@ -33,6 +33,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadSelectedPreviewCmd()
 	case previewLoadedMsg:
 		m.applyPreviewLoaded(msg)
+	case indexStatusMsg:
+		m.applyIndexStatus(msg)
+	case indexRefreshMsg:
+		m.applyIndexRefresh(msg)
 	}
 	return m, nil
 }
@@ -243,6 +247,18 @@ func (m Model) executeCommand(input string) (tea.Model, tea.Cmd) {
 		m.refreshRows()
 	case "here", "cwd":
 		m.toggleScope()
+	case "refresh", "index-refresh":
+		if !m.indexEnabled {
+			m.notice = "index disabled"
+			break
+		}
+		if m.indexRefreshing {
+			m.notice = "index refresh already running"
+			break
+		}
+		m.indexRefreshing = true
+		m.notice = "refreshing index..."
+		return m, m.refreshIndexCmd()
 	case "s", "sort":
 		m.setProjectChildSort(fields[1:])
 	case "open":
